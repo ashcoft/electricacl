@@ -187,6 +187,9 @@ pub struct CathodicItem {
     pub diameter_m: f64,
     pub length_m: f64,
     pub width_m: f64,
+    /// Wall height for external vertical/rectangular surfaces. Zero falls back
+    /// to the length so existing internal items keep their meaning.
+    pub height_m: f64,
     pub liquid_height_m: f64,
     pub discrepancy_pct: f64,
     pub current_density_override: Option<f64>,
@@ -223,6 +226,7 @@ impl Default for CathodicItem {
             diameter_m: 1.0,
             length_m: 1.0,
             width_m: 1.0,
+            height_m: 0.0,
             liquid_height_m: 1.0,
             discrepancy_pct: 10.0,
             current_density_override: None,
@@ -261,6 +265,7 @@ impl CathodicItem {
             &mut self.diameter_m,
             &mut self.length_m,
             &mut self.width_m,
+            &mut self.height_m,
             &mut self.liquid_height_m,
         ] {
             *value = value.max(0.0);
@@ -369,7 +374,11 @@ pub struct CathodicStateView {
 fn geometry(item: &CathodicItem) -> (f64, f64, f64) {
     let diameter = item.diameter_m;
     let height = if item.surface == Surface::External {
-        item.length_m
+        if item.height_m > 0.0 {
+            item.height_m
+        } else {
+            item.length_m
+        }
     } else {
         item.liquid_height_m
     };
@@ -406,6 +415,143 @@ fn geometry(item: &CathodicItem) -> (f64, f64, f64) {
                 (shell, ends, shell + ends)
             }
         },
+    }
+}
+
+struct SacpSizing {
+    mass: Option<f64>,
+    by_mass: Option<u32>,
+    by_current: Option<u32>,
+    life: Option<f64>,
+    required: u32,
+    sized: bool,
+}
+
+fn size_sacp(
+    item: &CathodicItem,
+    protection_current: f64,
+    capacity_at_temp: f64,
+    warnings: &mut Vec<CathodicWarning>,
+) -> SacpSizing {
+    let mass = if capacity_at_temp > 0.0 && item.utilization > 0.0 {
+        Some(
+            protection_current * item.design_life_years * HOURS_PER_YEAR
+                / capacity_at_temp
+                / item.utilization
+                * item.safety_factor,
+        )
+    } else {
+        None
+    };
+    let by_mass = mass.map(|value| {
+        if item.anode_weight_kg > 0.0 {
+            (value / item.anode_weight_kg - 1e-9).ceil().max(0.0) as u32
+        } else {
+            0
+        }
+    });
+    let by_current = item
+        .anode_output_a
+        .filter(|value| *value > 0.0)
+        .map(|output| (protection_current / output - 1e-9).ceil().max(0.0) as u32);
+
+    if item.anode_weight_kg <= 0.0 {
+        warnings.push(CathodicWarning {
+            code: "no_anode_weight",
+            message: "Anode unit weight is zero - the number of anodes cannot be sized".to_string(),
+        });
+    }
+    if let Some(required) = by_mass {
+        if item.anodes_selected < required {
+            warnings.push(CathodicWarning {
+                code: "anodes_short",
+                message: format!(
+                    "{} anodes selected, {required} required by the mass balance",
+                    item.anodes_selected
+                ),
+            });
+        }
+    }
+
+    let life = if mass.is_some()
+        && item.anodes_selected > 0
+        && item.anode_weight_kg > 0.0
+        && protection_current > 0.0
+        && capacity_at_temp > 0.0
+    {
+        let actual = item.anodes_selected as f64
+            * item.anode_weight_kg
+            * capacity_at_temp
+            * item.utilization
+            / (protection_current * HOURS_PER_YEAR * item.safety_factor);
+        if actual < item.design_life_years {
+            warnings.push(CathodicWarning {
+                code: "life_short",
+                message: format!(
+                    "Selected anodes give {actual:.1} years, below the {:.1}-year design life",
+                    item.design_life_years
+                ),
+            });
+        }
+        Some(actual)
+    } else {
+        None
+    };
+
+    SacpSizing {
+        mass,
+        by_mass,
+        by_current,
+        life,
+        required: by_mass.into_iter().chain(by_current).max().unwrap_or(0),
+        sized: item.anode_weight_kg > 0.0,
+    }
+}
+
+struct IccpSizing {
+    current: f64,
+    voltage: f64,
+    kva: f64,
+    required: u32,
+    sized: bool,
+}
+
+fn size_iccp(
+    item: &CathodicItem,
+    protection_current: f64,
+    warnings: &mut Vec<CathodicWarning>,
+) -> IccpSizing {
+    let rectifier = item.rectifier.clone().unwrap_or_default();
+    let voltage = (protection_current
+        * (rectifier.groundbed_resistance_ohm + rectifier.cable_resistance_ohm)
+        + rectifier.back_emf_v)
+        * (1.0 + rectifier.margin_pct / 100.0);
+    let required = if rectifier.anode_output_a > 0.0 {
+        (protection_current / rectifier.anode_output_a - 1e-9)
+            .ceil()
+            .max(0.0) as u32
+    } else {
+        warnings.push(CathodicWarning {
+            code: "no_groundbed_output",
+            message: "Groundbed anode output is zero - the anode count cannot be sized".to_string(),
+        });
+        0
+    };
+    if item.anodes_selected < required {
+        warnings.push(CathodicWarning {
+            code: "anodes_short",
+            message: format!(
+                "{} groundbed anodes selected, {required} required for {protection_current:.1} A",
+                item.anodes_selected
+            ),
+        });
+    }
+    IccpSizing {
+        current: protection_current,
+        voltage,
+        kva: voltage * protection_current / 1000.0,
+        required,
+        sized: rectifier.anode_output_a > 0.0,
     }
 }
 
@@ -450,119 +596,51 @@ pub fn derive(item: &CathodicItem) -> CathodicDerived {
         });
     }
 
-    let mut anode_mass = None;
-    let mut anodes_by_mass = None;
-    let mut anodes_by_current = None;
-    let mut life_years = None;
-    let mut rectifier_current = None;
-    let mut rectifier_voltage = None;
-    let mut rectifier_kva = None;
-
-    let anode_count = match item.method {
+    let (
+        anode_mass,
+        anodes_by_mass,
+        anodes_by_current,
+        life_years,
+        rectifier_current,
+        rectifier_voltage,
+        rectifier_kva,
+        anode_count,
+        sizing_available,
+    ) = match item.method {
         Method::Sacp => {
-            let mass = if capacity_at_temp > 0.0 && item.utilization > 0.0 {
-                let value = protection_current * item.design_life_years * HOURS_PER_YEAR
-                    / capacity_at_temp
-                    / item.utilization
-                    * item.safety_factor;
-                anode_mass = Some(value);
-                Some(value)
-            } else {
-                None
-            };
-            let by_mass = mass.map(|value| {
-                if item.anode_weight_kg > 0.0 {
-                    (value / item.anode_weight_kg - 1e-9).ceil().max(0.0) as u32
-                } else {
-                    0
-                }
-            });
-            let by_current = item
-                .anode_output_a
-                .filter(|value| *value > 0.0)
-                .map(|output| (protection_current / output - 1e-9).ceil().max(0.0) as u32);
-            anodes_by_mass = by_mass;
-            anodes_by_current = by_current;
-            if item.anode_weight_kg <= 0.0 {
-                warnings.push(CathodicWarning {
-                    code: "no_anode_weight",
-                    message: "Anode unit weight is zero - the number of anodes cannot be sized"
-                        .to_string(),
-                });
-            }
-            if let Some(required) = by_mass {
-                if item.anodes_selected < required {
-                    warnings.push(CathodicWarning {
-                        code: "anodes_short",
-                        message: format!(
-                            "{} anodes selected, {required} required by the mass balance",
-                            item.anodes_selected
-                        ),
-                    });
-                }
-            }
-            if mass.is_some()
-                && item.anodes_selected > 0
-                && item.anode_weight_kg > 0.0
-                && protection_current > 0.0
-                && capacity_at_temp > 0.0
-            {
-                let actual = item.anodes_selected as f64
-                    * item.anode_weight_kg
-                    * capacity_at_temp
-                    * item.utilization
-                    / (protection_current * HOURS_PER_YEAR * item.safety_factor);
-                life_years = Some(actual);
-                if actual < item.design_life_years {
-                    warnings.push(CathodicWarning {
-                        code: "life_short",
-                        message: format!(
-                            "Selected anodes give {actual:.1} years, below the {:.1}-year design life",
-                            item.design_life_years
-                        ),
-                    });
-                }
-            }
-            by_mass.into_iter().chain(by_current).max().unwrap_or(0)
+            let sizing = size_sacp(item, protection_current, capacity_at_temp, &mut warnings);
+            (
+                sizing.mass,
+                sizing.by_mass,
+                sizing.by_current,
+                sizing.life,
+                None,
+                None,
+                None,
+                sizing.required,
+                sizing.sized,
+            )
         }
         Method::Iccp => {
-            let rectifier = item.rectifier.clone().unwrap_or_default();
-            let current = protection_current;
-            let voltage = (current
-                * (rectifier.groundbed_resistance_ohm + rectifier.cable_resistance_ohm)
-                + rectifier.back_emf_v)
-                * (1.0 + rectifier.margin_pct / 100.0);
-            rectifier_current = Some(current);
-            rectifier_voltage = Some(voltage);
-            rectifier_kva = Some(voltage * current / 1000.0);
-            let output = rectifier.anode_output_a;
-            let required = if output > 0.0 {
-                (current / output - 1e-9).ceil().max(0.0) as u32
-            } else {
-                warnings.push(CathodicWarning {
-                    code: "no_groundbed_output",
-                    message: "Groundbed anode output is zero - the anode count cannot be sized"
-                        .to_string(),
-                });
-                0
-            };
-            if item.anodes_selected < required {
-                warnings.push(CathodicWarning {
-                    code: "anodes_short",
-                    message: format!(
-                        "{} groundbed anodes selected, {required} required for {current:.1} A",
-                        item.anodes_selected
-                    ),
-                });
-            }
-            required
+            let sizing = size_iccp(item, protection_current, &mut warnings);
+            (
+                None,
+                None,
+                None,
+                None,
+                Some(sizing.current),
+                Some(sizing.voltage),
+                Some(sizing.kva),
+                sizing.required,
+                sizing.sized,
+            )
         }
     };
 
     let checks = CathodicChecks {
         capacity: capacity_at_temp > 0.0,
         current_density: current_density > 0.0,
-        anode_count: item.anodes_selected >= anode_count,
+        anode_count: sizing_available && item.anodes_selected >= anode_count,
         design_life: life_years
             .map(|value| value >= item.design_life_years)
             .unwrap_or(item.method == Method::Iccp),
@@ -594,6 +672,15 @@ pub fn derive(item: &CathodicItem) -> CathodicDerived {
         checks,
         acceptable,
         warnings,
+    }
+}
+
+/// Anode output used to size the item: sacrificial output for SACP, groundbed
+/// output for ICCP (including the default when the rectifier is omitted).
+pub fn effective_anode_output(item: &CathodicItem) -> Option<f64> {
+    match item.method {
+        Method::Sacp => item.anode_output_a,
+        Method::Iccp => Some(item.rectifier.clone().unwrap_or_default().anode_output_a),
     }
 }
 
@@ -701,5 +788,69 @@ mod tests {
         assert_eq!(derived.anodes_required, 8);
         let voltage = (derived.protection_current_a * 1.2 + 2.0) * 1.2;
         assert!((derived.rectifier_voltage_v.unwrap() - voltage).abs() < 1e-9);
+    }
+
+    #[test]
+    fn iccp_zero_groundbed_output_is_not_acceptable() {
+        let item = CathodicItem {
+            method: Method::Iccp,
+            structure: Structure::Pipeline,
+            diameter_m: 0.5,
+            length_m: 100.0,
+            current_density_a_m2: 0.05,
+            apply_coating_breakdown: false,
+            discrepancy_pct: 0.0,
+            anodes_selected: 1,
+            rectifier: Some(RectifierInputs {
+                anode_output_a: 0.0,
+                ..RectifierInputs::default()
+            }),
+            ..CathodicItem::default()
+        };
+        let derived = derive(&item);
+        assert!(derived.protection_current_a > 0.0);
+        assert!(!derived.checks.anode_count);
+        assert!(!derived.acceptable);
+        assert!(derived
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "no_groundbed_output"));
+    }
+
+    #[test]
+    fn external_rectangular_tank_uses_its_wall_height() {
+        let item = CathodicItem {
+            structure: Structure::Tank,
+            orientation: Orientation::Rectangular,
+            surface: Surface::External,
+            length_m: 10.0,
+            width_m: 6.0,
+            height_m: 3.0,
+            liquid_height_m: 1.0,
+            discrepancy_pct: 0.0,
+            ..CathodicItem::default()
+        };
+        let derived = derive(&item);
+        assert!((derived.exposed_area_m2 - 216.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn effective_output_follows_the_protection_method() {
+        let sacp = CathodicItem {
+            anode_output_a: Some(0.43),
+            ..CathodicItem::default()
+        };
+        assert_eq!(effective_anode_output(&sacp), Some(0.43));
+
+        let iccp = CathodicItem {
+            method: Method::Iccp,
+            anode_output_a: Some(0.43),
+            rectifier: Some(RectifierInputs {
+                anode_output_a: 5.0,
+                ..RectifierInputs::default()
+            }),
+            ..CathodicItem::default()
+        };
+        assert_eq!(effective_anode_output(&iccp), Some(5.0));
     }
 }

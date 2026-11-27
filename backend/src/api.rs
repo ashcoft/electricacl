@@ -18,7 +18,7 @@ use crate::auth::{self, Auth, AuthStatus, LoginError};
 use crate::cable::{CableCircuit, CableReference, CableStateView};
 use crate::cable_store::CableStore;
 use crate::calc::{self, ItemView, ScenarioSummary, StateView};
-use crate::cathodic::{CathodicItem, CathodicStateView};
+use crate::cathodic::{effective_anode_output, CathodicItem, CathodicStateView};
 use crate::cathodic_store::CathodicStore;
 use crate::models::{CalcSettings, LoadItem, MotorRef, ProjectMeta, Scenario};
 use crate::store::Store;
@@ -546,7 +546,7 @@ async fn export_cathodic_csv(State(state): State<Shared>) -> Result<Response, Ap
         "tag,description,source_sheet,structure,orientation,surface,method,design_life_years,\
 coating_breakdown,apply_coating_breakdown,current_density_a_m2,temp_coefficient,design_temp_c,\
 operating_temp_c,capacity_temp_c,capacity_ah_kg,utilization,safety_factor,diameter_m,length_m,\
-width_m,liquid_height_m,discrepancy_pct,current_density_used_a_m2,capacity_at_temp_ah_kg,\
+width_m,height_m,liquid_height_m,discrepancy_pct,current_density_used_a_m2,capacity_at_temp_ah_kg,\
 wetted_area_m2,exposed_area_m2,protection_current_a,anode_type,anode_weight_kg,anode_output_a,\
 anode_mass_kg,anodes_by_mass,anodes_by_current,anodes_required,anodes_selected,life_years,\
 rectifier_current_a,rectifier_voltage_v,rectifier_kva,check_capacity,check_current_density,\
@@ -581,6 +581,7 @@ check_anode_count,check_design_life,acceptable,remark"
             format!("{:.3}", item.diameter_m),
             format!("{:.3}", item.length_m),
             format!("{:.3}", item.width_m),
+            format!("{:.3}", item.height_m),
             format!("{:.3}", item.liquid_height_m),
             format!("{:.2}", item.discrepancy_pct),
             format!("{:.5}", derived.current_density_a_m2),
@@ -590,7 +591,7 @@ check_anode_count,check_design_life,acceptable,remark"
             format!("{:.4}", derived.protection_current_a),
             csv_escape(&optional(&item.anode_type)),
             format!("{:.2}", item.anode_weight_kg),
-            item.anode_output_a
+            effective_anode_output(item)
                 .map(|v| format!("{v:.4}"))
                 .unwrap_or_default(),
             derived

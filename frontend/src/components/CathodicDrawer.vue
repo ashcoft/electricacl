@@ -35,16 +35,17 @@ function defaultRectifier(): RectifierInputs {
 }
 
 function strip(row: CathodicRow): CathodicItem {
-  const copy = JSON.parse(JSON.stringify(row)) as Record<string, unknown>
+  const copy = structuredClone(row) as unknown as Record<string, unknown>
   delete copy.derived
   return copy as unknown as CathodicItem
 }
 
 function normalize(item: CathodicItem): CathodicItem {
-  const copy = JSON.parse(JSON.stringify(item)) as CathodicItem
-  if (copy.capacity_temp_c === null || !Number.isFinite(copy.capacity_temp_c)) {
-    copy.capacity_temp_c = copy.operating_temp_c
+  const copy = structuredClone(item)
+  if (typeof copy.capacity_temp_c !== 'number' || !Number.isFinite(copy.capacity_temp_c)) {
+    copy.capacity_temp_c = null
   }
+  if (typeof copy.height_m !== 'number' || !Number.isFinite(copy.height_m)) copy.height_m = 0
   if (copy.anode_output_a !== null && !Number.isFinite(copy.anode_output_a)) copy.anode_output_a = null
   copy.anodes_selected = Math.max(1, Math.round(copy.anodes_selected || 1))
   if (copy.method === 'iccp' && !copy.rectifier) copy.rectifier = defaultRectifier()
@@ -102,7 +103,14 @@ async function remove() {
 
 <template>
   <div v-if="draft && derived">
-    <div class="drawer-backdrop" @click="ui.cathodicDrawerId = null" />
+    <button
+      type="button"
+      class="drawer-backdrop"
+      aria-label="Close details"
+      tabindex="-1"
+      style="border: 0; padding: 0"
+      @click="ui.cathodicDrawerId = null"
+    />
     <aside class="drawer">
       <div class="drawer-head">
         <div style="min-width: 0">
@@ -194,12 +202,12 @@ async function remove() {
           <div class="section-title">Identification</div>
           <div class="form-grid">
             <div class="field">
-              <label>Tag</label>
-              <input v-model="draft.tag" class="input" placeholder="T-2430" />
+              <label for="cathodic-tag">Tag</label>
+              <input id="cathodic-tag" v-model="draft.tag" class="input" placeholder="T-2430" />
             </div>
             <div class="field">
-              <label>Description</label>
-              <input v-model="draft.description" class="input" placeholder="Internal tank bottom" />
+              <label for="cathodic-description">Description</label>
+              <input id="cathodic-description" v-model="draft.description" class="input" placeholder="Internal tank bottom" />
             </div>
           </div>
         </div>
@@ -208,32 +216,32 @@ async function remove() {
           <div class="section-title">Scope</div>
           <div class="form-grid">
             <div class="field">
-              <label>Structure</label>
-              <select v-model="draft.structure" class="select">
+              <label for="cathodic-structure">Structure</label>
+              <select id="cathodic-structure" v-model="draft.structure" class="select">
                 <option v-for="entry in CATHODIC_STRUCTURES" :key="entry.key" :value="entry.key">
                   {{ entry.label }}
                 </option>
               </select>
             </div>
             <div class="field">
-              <label>Orientation</label>
-              <select v-model="draft.orientation" class="select" :disabled="isPipe">
+              <label for="cathodic-orientation">Orientation</label>
+              <select id="cathodic-orientation" v-model="draft.orientation" class="select" :disabled="isPipe">
                 <option v-for="entry in CATHODIC_ORIENTATIONS" :key="entry.key" :value="entry.key">
                   {{ entry.label }}
                 </option>
               </select>
             </div>
             <div class="field">
-              <label>Surface</label>
-              <select v-model="draft.surface" class="select">
+              <label for="cathodic-surface">Surface</label>
+              <select id="cathodic-surface" v-model="draft.surface" class="select">
                 <option v-for="entry in CATHODIC_SURFACES" :key="entry.key" :value="entry.key">
                   {{ entry.label }}
                 </option>
               </select>
             </div>
             <div class="field">
-              <label>Protection method</label>
-              <select v-model="draft.method" class="select" @change="onMethodChange">
+              <label for="cathodic-protection-method">Protection method</label>
+              <select id="cathodic-protection-method" v-model="draft.method" class="select" @change="onMethodChange">
                 <option v-for="entry in CATHODIC_METHODS" :key="entry.key" :value="entry.key">
                   {{ entry.label }}
                 </option>
@@ -246,51 +254,58 @@ async function remove() {
           <div class="section-title">Design basis</div>
           <div class="form-grid">
             <div class="field">
-              <label>Design life (years)</label>
-              <input v-model.number="draft.design_life_years" class="input num" type="number" step="1" min="0" />
+              <label for="cathodic-design-life-years">Design life (years)</label>
+              <input id="cathodic-design-life-years" v-model.number="draft.design_life_years" class="input num" type="number" step="1" min="0" />
             </div>
             <div class="field">
-              <label>Coating breakdown CBf</label>
-              <input v-model.number="draft.coating_breakdown" class="input num" type="number" step="0.01" min="0" />
+              <label for="cathodic-coating-breakdown-cbf">Coating breakdown CBf</label>
+              <input id="cathodic-coating-breakdown-cbf" v-model.number="draft.coating_breakdown" class="input num" type="number" step="0.01" min="0" />
             </div>
             <div class="field">
-              <label>Mean current density (A/m²)</label>
-              <input v-model.number="draft.current_density_a_m2" class="input num" type="number" step="0.001" min="0" />
+              <label for="cathodic-mean-current-density-a-m">Mean current density (A/m²)</label>
+              <input id="cathodic-mean-current-density-a-m" v-model.number="draft.current_density_a_m2" class="input num" type="number" step="0.001" min="0" />
             </div>
             <div class="field">
-              <label>Temperature coefficient (/°C)</label>
-              <input v-model.number="draft.temp_coefficient" class="input num" type="number" step="0.001" min="0" />
+              <label for="cathodic-temperature-coefficient-c">Temperature coefficient (/°C)</label>
+              <input id="cathodic-temperature-coefficient-c" v-model.number="draft.temp_coefficient" class="input num" type="number" step="0.001" min="0" />
             </div>
             <div class="field">
-              <label>Design temperature (°C)</label>
-              <input v-model.number="draft.design_temp_c" class="input num" type="number" step="0.1" />
+              <label for="cathodic-design-temperature-c">Design temperature (°C)</label>
+              <input id="cathodic-design-temperature-c" v-model.number="draft.design_temp_c" class="input num" type="number" step="0.1" />
               <div class="small muted">Used for the current density correction.</div>
             </div>
             <div class="field">
-              <label>Operating temperature (°C)</label>
-              <input v-model.number="draft.operating_temp_c" class="input num" type="number" step="0.1" />
+              <label for="cathodic-operating-temperature-c">Operating temperature (°C)</label>
+              <input id="cathodic-operating-temperature-c" v-model.number="draft.operating_temp_c" class="input num" type="number" step="0.1" />
             </div>
             <div class="field">
-              <label>Capacity temperature (°C)</label>
-              <input v-model.number="draft.capacity_temp_c" class="input num" type="number" step="0.1" />
-              <div class="small muted">Defaults to the operating temperature.</div>
+              <label for="cathodic-capacity-temperature-c">Capacity temperature (°C)</label>
+              <input
+                id="cathodic-capacity-temperature-c"
+                v-model.number="draft.capacity_temp_c"
+                class="input num"
+                type="number"
+                step="0.1"
+                :placeholder="String(draft.operating_temp_c)"
+              />
+              <div class="small muted">Blank inherits the operating temperature.</div>
             </div>
             <div class="field">
-              <label>Anode capacity (Ah/kg)</label>
-              <input v-model.number="draft.capacity_ah_kg" class="input num" type="number" step="1" min="0" />
+              <label for="cathodic-anode-capacity-ah-kg">Anode capacity (Ah/kg)</label>
+              <input id="cathodic-anode-capacity-ah-kg" v-model.number="draft.capacity_ah_kg" class="input num" type="number" step="1" min="0" />
             </div>
             <div class="field">
-              <label>Utilization factor U</label>
-              <input v-model.number="draft.utilization" class="input num" type="number" step="0.01" min="0" max="1" />
+              <label for="cathodic-utilization-factor-u">Utilization factor U</label>
+              <input id="cathodic-utilization-factor-u" v-model.number="draft.utilization" class="input num" type="number" step="0.01" min="0" max="1" />
             </div>
             <div class="field">
-              <label>Safety factor S</label>
-              <input v-model.number="draft.safety_factor" class="input num" type="number" step="0.01" min="0.1" />
+              <label for="cathodic-safety-factor-s">Safety factor S</label>
+              <input id="cathodic-safety-factor-s" v-model.number="draft.safety_factor" class="input num" type="number" step="0.01" min="0.1" />
             </div>
             <div class="field">
-              <label>Apply coating breakdown</label>
+              <label for="cathodic-apply-coating-breakdown">Apply coating breakdown</label>
               <label class="small" style="display: flex; gap: 8px; align-items: center; padding-top: 6px">
-                <input v-model="draft.apply_coating_breakdown" type="checkbox" />
+                <input id="cathodic-apply-coating-breakdown" v-model="draft.apply_coating_breakdown" type="checkbox" />
                 Multiply the temperature-corrected density by CBf
               </label>
             </div>
@@ -301,29 +316,41 @@ async function remove() {
           <div class="section-title">Geometry</div>
           <div class="form-grid">
             <div v-if="!isPipe && draft.orientation !== 'rectangular'" class="field">
-              <label>Diameter (m)</label>
-              <input v-model.number="draft.diameter_m" class="input num" type="number" step="0.01" min="0" />
+              <label for="cathodic-diameter-m">Diameter (m)</label>
+              <input id="cathodic-diameter-m" v-model.number="draft.diameter_m" class="input num" type="number" step="0.01" min="0" />
             </div>
             <div v-if="isPipe" class="field">
-              <label>Diameter (m)</label>
-              <input v-model.number="draft.diameter_m" class="input num" type="number" step="0.01" min="0" />
+              <label for="cathodic-diameter-m-2">Diameter (m)</label>
+              <input id="cathodic-diameter-m-2" v-model.number="draft.diameter_m" class="input num" type="number" step="0.01" min="0" />
             </div>
             <div class="field">
-              <label>{{ isPipe ? 'Length (m)' : 'Length / height (m)' }}</label>
-              <input v-model.number="draft.length_m" class="input num" type="number" step="0.01" min="0" />
+              <label for="cathodic-field-19">{{ isPipe ? 'Length (m)' : 'Length / height (m)' }}</label>
+              <input id="cathodic-field-19" v-model.number="draft.length_m" class="input num" type="number" step="0.01" min="0" />
             </div>
             <div v-if="draft.orientation === 'rectangular' && !isPipe" class="field">
-              <label>Width (m)</label>
-              <input v-model.number="draft.width_m" class="input num" type="number" step="0.01" min="0" />
+              <label for="cathodic-width-m">Width (m)</label>
+              <input id="cathodic-width-m" v-model.number="draft.width_m" class="input num" type="number" step="0.01" min="0" />
+            </div>
+            <div v-if="draft.surface === 'external' && !isPipe" class="field">
+              <label for="cathodic-wall-height">Wall height (m)</label>
+              <input
+                id="cathodic-wall-height"
+                v-model.number="draft.height_m"
+                class="input num"
+                type="number"
+                step="0.01"
+                min="0"
+              />
+              <div class="small muted">Blank or 0 uses the length.</div>
             </div>
             <div v-if="!isPipe" class="field">
-              <label>Liquid height (m)</label>
-              <input v-model.number="draft.liquid_height_m" class="input num" type="number" step="0.01" min="0" />
-              <div class="small muted">Internal wetted height; external surfaces use the full length.</div>
+              <label for="cathodic-liquid-height-m">Liquid height (m)</label>
+              <input id="cathodic-liquid-height-m" v-model.number="draft.liquid_height_m" class="input num" type="number" step="0.01" min="0" />
+              <div class="small muted">Internal wetted height; external surfaces use the wall height.</div>
             </div>
             <div class="field">
-              <label>Discrepancy allowance (%)</label>
-              <input v-model.number="draft.discrepancy_pct" class="input num" type="number" step="0.1" min="0" />
+              <label for="cathodic-discrepancy-allowance">Discrepancy allowance (%)</label>
+              <input id="cathodic-discrepancy-allowance" v-model.number="draft.discrepancy_pct" class="input num" type="number" step="0.1" min="0" />
             </div>
           </div>
         </div>
@@ -332,21 +359,21 @@ async function remove() {
           <div class="section-title">{{ draft.method === 'sacp' ? 'Anode' : 'Groundbed' }}</div>
           <div class="form-grid">
             <div class="field">
-              <label>Anode type</label>
-              <input v-model="draft.anode_type" class="input" placeholder="ICS 40 AWB" />
+              <label for="cathodic-anode-type">Anode type</label>
+              <input id="cathodic-anode-type" v-model="draft.anode_type" class="input" placeholder="ICS 40 AWB" />
             </div>
             <div class="field">
-              <label>Anode unit weight (kg)</label>
-              <input v-model.number="draft.anode_weight_kg" class="input num" type="number" step="0.1" min="0" />
+              <label for="cathodic-anode-unit-weight-kg">Anode unit weight (kg)</label>
+              <input id="cathodic-anode-unit-weight-kg" v-model.number="draft.anode_weight_kg" class="input num" type="number" step="0.1" min="0" />
             </div>
             <div v-if="draft.method === 'sacp'" class="field">
-              <label>Anode output (A)</label>
-              <input v-model.number="draft.anode_output_a" class="input num" type="number" step="0.01" min="0" />
+              <label for="cathodic-anode-output-a">Anode output (A)</label>
+              <input id="cathodic-anode-output-a" v-model.number="draft.anode_output_a" class="input num" type="number" step="0.01" min="0" />
               <div class="small muted">Optional current check; blank skips it.</div>
             </div>
             <div class="field">
-              <label>Anodes selected</label>
-              <input v-model.number="draft.anodes_selected" class="input num" type="number" step="1" min="1" />
+              <label for="cathodic-anodes-selected">Anodes selected</label>
+              <input id="cathodic-anodes-selected" v-model.number="draft.anodes_selected" class="input num" type="number" step="1" min="1" />
             </div>
           </div>
         </div>
@@ -355,31 +382,36 @@ async function remove() {
           <div class="section-title">Rectifier &amp; groundbed</div>
           <div class="form-grid">
             <div class="field">
-              <label>Groundbed anode output (A)</label>
-              <input v-model.number="draft.rectifier.anode_output_a" class="input num" type="number" step="0.1" min="0" />
+              <label for="cathodic-groundbed-anode-output-a">Groundbed anode output (A)</label>
+              <input id="cathodic-groundbed-anode-output-a" v-model.number="draft.rectifier.anode_output_a" class="input num" type="number" step="0.1" min="0" />
             </div>
             <div class="field">
-              <label>Groundbed resistance (Ω)</label>
-              <input v-model.number="draft.rectifier.groundbed_resistance_ohm" class="input num" type="number" step="0.01" min="0" />
+              <label for="cathodic-groundbed-resistance">Groundbed resistance (Ω)</label>
+              <input id="cathodic-groundbed-resistance" v-model.number="draft.rectifier.groundbed_resistance_ohm" class="input num" type="number" step="0.01" min="0" />
             </div>
             <div class="field">
-              <label>Cable resistance (Ω)</label>
-              <input v-model.number="draft.rectifier.cable_resistance_ohm" class="input num" type="number" step="0.01" min="0" />
+              <label for="cathodic-cable-resistance">Cable resistance (Ω)</label>
+              <input id="cathodic-cable-resistance" v-model.number="draft.rectifier.cable_resistance_ohm" class="input num" type="number" step="0.01" min="0" />
             </div>
             <div class="field">
-              <label>Back EMF (V)</label>
-              <input v-model.number="draft.rectifier.back_emf_v" class="input num" type="number" step="0.1" min="0" />
+              <label for="cathodic-back-emf-v">Back EMF (V)</label>
+              <input id="cathodic-back-emf-v" v-model.number="draft.rectifier.back_emf_v" class="input num" type="number" step="0.1" min="0" />
             </div>
             <div class="field">
-              <label>Rectifier margin (%)</label>
-              <input v-model.number="draft.rectifier.margin_pct" class="input num" type="number" step="1" min="0" />
+              <label for="cathodic-rectifier-margin">Rectifier margin (%)</label>
+              <input id="cathodic-rectifier-margin" v-model.number="draft.rectifier.margin_pct" class="input num" type="number" step="1" min="0" />
             </div>
           </div>
         </div>
 
         <div>
           <div class="section-title">Remarks</div>
-          <textarea v-model="draft.remark" class="input" placeholder="Basis of the data, references, notes…" />
+          <textarea
+            v-model="draft.remark"
+            class="input"
+            aria-label="Remarks"
+            placeholder="Basis of the data, references, notes…"
+          />
         </div>
       </div>
 

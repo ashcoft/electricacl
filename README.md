@@ -99,6 +99,9 @@ I_rect = Ip
 V_rect = (Ip × (R_groundbed + R_cable) + back EMF) × (1 + margin)
 ```
 
+External vertical and rectangular surfaces take an independent wall height; a blank height falls
+back to the length. Internal surfaces use the liquid height.
+
 **Verification.** `backend/tests/cathodic_workbook.rs` asserts 23 sheets of the source workbook to
 1 × 10⁻⁶: wetted and exposed area, current density, anode capacity, protection current, anode mass
 and anode count. Four sheets are documented one-offs and are not forced into the model — a

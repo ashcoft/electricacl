@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import CathodicDrawer from '../components/CathodicDrawer.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import Icon from '../components/Icon.vue'
 import { api } from '../lib/api'
@@ -91,7 +90,12 @@ async function newItem() {
       <div class="card-head" style="flex-wrap: wrap; gap: 10px">
         <div class="search">
           <span class="icon"><Icon name="search" :size="13" /></span>
-          <input v-model="search" class="input" placeholder="Search tag, description, structure, anode…" />
+          <input
+            v-model="search"
+            class="input"
+            aria-label="Search cathodic items"
+            placeholder="Search tag, description, structure, anode…"
+          />
         </div>
         <div class="spacer" />
         <span class="pill neutral">{{ rows.length }} rows</span>
@@ -120,8 +124,11 @@ async function newItem() {
               v-for="row in rows"
               :key="row.id"
               class="row-click"
+              tabindex="0"
               :class="{ selected: ui.cathodicDrawerId === row.id }"
               @click="ui.cathodicDrawerId = row.id"
+              @keydown.enter="ui.cathodicDrawerId = row.id"
+              @keydown.space.prevent="ui.cathodicDrawerId = row.id"
             >
               <td>
                 <div class="mono">{{ row.tag ?? '–' }}</div>
@@ -189,7 +196,6 @@ async function newItem() {
       </div>
     </section>
 
-    <CathodicDrawer v-if="ui.cathodicDrawerId" />
 
     <ConfirmDialog
       v-if="confirmReset"

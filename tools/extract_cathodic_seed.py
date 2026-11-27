@@ -103,164 +103,227 @@ def close(a, b, tolerance=1e-9):
     return abs(a - b) <= tolerance * max(1.0, abs(a), abs(b))
 
 
-def parse_sheet(sheet):
-    tag = first_text(sheet, r"Vessel Tag")
+TAG_LABEL = r"Vessel Tag"
+DISCREPANCY_LABEL = r"Discrepancy"
+
+
+def parse_identification(sheet):
+    tag = first_text(sheet, TAG_LABEL)
     description = None
-    row, column = find_label(sheet, r"Vessel Tag")
+    row, column = find_label(sheet, TAG_LABEL)
     if row is not None:
-        for candidate in (row + 1,):
-            for col in range(column + 1, min(sheet.ncols, VALUE_COLUMNS + 1)):
-                value = sheet.cell_value(candidate, col)
-                if isinstance(value, str) and value.strip() and value.strip() != "-":
-                    description = value.strip()
-                    break
-            if description:
+        for col in range(column + 1, min(sheet.ncols, VALUE_COLUMNS + 1)):
+            value = sheet.cell_value(row + 1, col)
+            if isinstance(value, str) and value.strip() and value.strip() != "-":
+                description = value.strip()
                 break
     if description and tag and description == tag:
         description = None
+    return tag, description
 
-    design_life = first_number(sheet, r"Anode Design Life")
-    coating = first_number(sheet, r"Coating Breakdown")
-    current_density = first_number(sheet, r"Cathode.*Current Density")
-    capacity = first_number(sheet, r"Electrochemical Capacity")
-    utilization = first_number(sheet, r"Utilization Factor")
-    safety_factor = first_number(sheet, r"Safety Factor") or 1.0
 
-    design_temp = first_number(sheet, r"Design Temp")
-    operating_temp = first_number(sheet, r"Operating Temp")
-    current_density_cached = first_number(sheet, r"Current Density used")
-    capacity_temp_cached = first_number(sheet, r"Temp \(Cap\)")
+def parse_design(sheet):
+    return {
+        "life": first_number(sheet, r"Anode Design Life"),
+        "coating": first_number(sheet, r"Coating Breakdown"),
+        "current_density": first_number(sheet, r"Cathode.*Current Density"),
+        "capacity": first_number(sheet, r"Electrochemical Capacity"),
+        "utilization": first_number(sheet, r"Utilization Factor"),
+        "safety_factor": first_number(sheet, r"Safety Factor") or 1.0,
+        "design_temp": first_number(sheet, r"Design Temp"),
+        "operating_temp": first_number(sheet, r"Operating Temp"),
+        "current_density_cached": first_number(sheet, r"Current Density used"),
+        "capacity_temp_cached": first_number(sheet, r"Temp \(Cap\)"),
+    }
 
-    diameter = first_number(sheet, r"Vessel Diameter")
-    length = first_number(sheet, r"Vessel (High|Length|Height)")
-    width = first_number(sheet, r"Vessel Width")
-    liquid_height = first_number(sheet, r"Liquid Height")
 
-    exposed = first_number(sheet, r"Exposed Surface")
-    wetted = first_number(sheet, r"Total Wetted")
-    protection_current = first_number(sheet, r"Protection Current")
-    mass = first_number(sheet, r"Total Mass")
-    anode_weight = first_number(sheet, r"Anode unit weight")
-    anode_output = first_number(sheet, r"Mean Anode Output")
-    selected = first_number(sheet, r"Number of Anodes To be Used")
-    anode_type = first_text(sheet, r"Anode Type")
+def parse_geometry(sheet):
+    return {
+        "diameter": first_number(sheet, r"Vessel Diameter"),
+        "length": first_number(sheet, r"Vessel (High|Length|Height)"),
+        "width": first_number(sheet, r"Vessel Width"),
+        "liquid_height": first_number(sheet, r"Liquid Height"),
+    }
 
-    required = [
-        design_life,
-        coating,
-        current_density,
-        capacity,
-        utilization,
-        exposed,
-        wetted,
-        mass,
-        anode_weight,
-        current_density_cached,
-        capacity_temp_cached,
-        protection_current,
-        selected,
-    ]
-    if any(value is None for value in required):
-        return None, "missing design parameters"
 
-    # The workbook sometimes mislabels a vertical tank as HORIZONTAL, so pick the
-    # geometry that reproduces the sheet's own wetted area.
+def parse_results(sheet):
+    return {
+        "exposed": first_number(sheet, r"Exposed Surface"),
+        "wetted": first_number(sheet, r"Total Wetted"),
+        "protection_current": first_number(sheet, r"Protection Current"),
+        "mass": first_number(sheet, r"Total Mass"),
+        "anode_weight": first_number(sheet, r"Anode unit weight"),
+        "anode_output": first_number(sheet, r"Mean Anode Output"),
+        "selected": first_number(sheet, r"Number of Anodes To be Used"),
+        "anode_type": first_text(sheet, r"Anode Type"),
+    }
+
+
+def detect_geometry(diameter, length, width, liquid_height, wetted):
+    """Pick the geometry that reproduces the sheet's own wetted area."""
     candidates = []
-    for structure_candidate in ("tank", "vessel"):
-        if diameter is not None and liquid_height is not None:
-            candidates.append((structure_candidate, "vertical"))
-        if diameter is not None and length is not None and liquid_height is not None:
-            candidates.append((structure_candidate, "horizontal"))
+    if diameter is not None and liquid_height is not None:
+        candidates.extend([("tank", "vertical"), ("vessel", "vertical")])
+    if diameter is not None and length is not None and liquid_height is not None:
+        candidates.extend([("tank", "horizontal"), ("vessel", "horizontal")])
     if length is not None and width is not None and liquid_height is not None:
         candidates.append(("tank", "rectangular"))
     if not candidates:
         return None, "missing geometry"
 
-    best = None
-    for structure_candidate, orientation_candidate in candidates:
-        _, _, total = areas(
-            structure_candidate,
-            orientation_candidate,
+    scored = []
+    for structure, orientation in candidates:
+        total = areas(
+            structure,
+            orientation,
             diameter or 0,
             length or 0,
             width or 0,
             liquid_height or 0,
-        )
-        error = abs(total - wetted)
-        if best is None or error < best[0]:
-            best = (error, structure_candidate, orientation_candidate, total)
-    _, structure, orientation, total = best
+        )[2]
+        scored.append((abs(total - wetted), structure, orientation, total))
+    _, structure, orientation, total = min(scored, key=lambda entry: entry[0])
     if not close(total, wetted, 1e-6):
         return None, f"area model gives {total:.4f} m2, workbook has {wetted:.4f} m2"
+    return (structure, orientation), None
 
-    discrepancy_area_cached = round_half_up(exposed - wetted, 2)
-    label_row, label_column = find_label(sheet, r"Discrepancy")
+
+def discrepancy_percentage(sheet, wetted, exposed):
+    cached_area = round_half_up(exposed - wetted, 2)
+    label_row, label_column = find_label(sheet, DISCREPANCY_LABEL)
     label_pct = None
     if label_row is not None:
-        match = re.search(r"(\d+(?:\.\d+)?)\s*%", str(sheet.cell_value(label_row, label_column)))
-        if match:
-            label_pct = float(match.group(1))
-    candidates = [value for value in (label_pct, 5.0, 10.0, 20.0) if value is not None]
-    discrepancy_pct = None
-    for candidate in dict.fromkeys(candidates):
-        if close(round_half_up(wetted * candidate / 100, 2), discrepancy_area_cached, 1e-9):
-            discrepancy_pct = candidate
-            break
-    if discrepancy_pct is None:
-        discrepancy_pct = round_half_up((exposed / wetted - 1) * 100, 2)
-    discrepancy_area = round_half_up(wetted * discrepancy_pct / 100, 2)
-    exposed_model = wetted + discrepancy_area
-    if not close(exposed_model, exposed, 1e-9):
-        return None, f"discrepancy allowance gives {exposed_model:.6f} m2, workbook has {exposed:.6f} m2"
+        text = str(sheet.cell_value(label_row, label_column))
+        if "%" in text:
+            try:
+                label_pct = float(text.split("%")[0].split()[-1])
+            except ValueError:
+                label_pct = None
+    for candidate in dict.fromkeys(value for value in (label_pct, 5.0, 10.0, 20.0) if value is not None):
+        if close(round_half_up(wetted * candidate / 100, 2), cached_area, 1e-9):
+            return candidate
+    return round_half_up((exposed / wetted - 1) * 100, 2)
 
-    # Pick the temperature basis and coating treatment the sheet actually uses.
+
+def select_current_density(design, cached):
     options = []
-    for label, temp in (("design", design_temp), ("operating", operating_temp)):
-        if temp is None:
+    for label, temperature in (
+        ("design", design["design_temp"]),
+        ("operating", design["operating_temp"]),
+    ):
+        if temperature is None:
             continue
         for apply_coating in (True, False):
-            cdu = (current_density + (temp - 25) * TEMP_COEFFICIENT) * (
-                coating if apply_coating else 1.0
+            cdu = (design["current_density"] + (temperature - 25) * TEMP_COEFFICIENT) * (
+                design["coating"] if apply_coating else 1.0
             )
-            options.append((abs(cdu - current_density_cached), label, temp, apply_coating, cdu))
+            options.append((abs(cdu - cached), label, temperature, apply_coating, cdu))
     if not options:
         return None, "no temperature basis"
-    _, current_temp_basis, current_temp, apply_coating, cdu = min(options)
-    if not close(cdu, current_density_cached, 1e-9):
-        return None, f"current density model gives {cdu:.8f}, workbook has {current_density_cached:.8f}"
+    _, basis, temperature, apply_coating, cdu = min(options)
+    if not close(cdu, cached, 1e-9):
+        return None, f"current density model gives {cdu:.8f}, workbook has {cached:.8f}"
+    return {
+        "basis": basis,
+        "temperature": temperature,
+        "apply_coating": apply_coating,
+        "cdu": cdu,
+    }, None
 
-    capacity_options = []
-    for label, temp in (("design", design_temp), ("operating", operating_temp)):
-        if temp is None:
+
+def select_capacity(design, cached):
+    options = []
+    for label, temperature in (
+        ("design", design["design_temp"]),
+        ("operating", design["operating_temp"]),
+    ):
+        if temperature is None:
             continue
-        cap = capacity - CAPACITY_SLOPE * (temp - 20)
-        capacity_options.append((abs(cap - capacity_temp_cached), label, temp, cap))
-    if not capacity_options:
+        capacity = design["capacity"] - CAPACITY_SLOPE * (temperature - 20)
+        options.append((abs(capacity - cached), label, temperature, capacity))
+    if not options:
         return None, "no capacity temperature"
-    _, capacity_basis, capacity_temp, capacity_at_temp = min(capacity_options)
-    if not close(capacity_at_temp, capacity_temp_cached, 1e-9):
+    _, basis, temperature, capacity = min(options)
+    if not close(capacity, cached, 1e-9):
+        return None, f"capacity model gives {capacity:.4f}, workbook has {cached:.4f}"
+    return {"basis": basis, "temperature": temperature, "capacity": capacity}, None
+
+
+def parse_sheet(sheet):
+    tag, description = parse_identification(sheet)
+    design = parse_design(sheet)
+    geometry = parse_geometry(sheet)
+    results = parse_results(sheet)
+
+    required = [
+        design["life"],
+        design["coating"],
+        design["current_density"],
+        design["capacity"],
+        design["utilization"],
+        design["current_density_cached"],
+        design["capacity_temp_cached"],
+        results["exposed"],
+        results["wetted"],
+        results["protection_current"],
+        results["mass"],
+        results["anode_weight"],
+        results["selected"],
+    ]
+    if any(value is None for value in required):
+        return None, "missing design parameters"
+
+    detected, reason = detect_geometry(
+        geometry["diameter"],
+        geometry["length"],
+        geometry["width"],
+        geometry["liquid_height"],
+        results["wetted"],
+    )
+    if detected is None:
+        return None, reason
+    structure, orientation = detected
+
+    discrepancy_pct = discrepancy_percentage(sheet, results["wetted"], results["exposed"])
+    discrepancy_area = round_half_up(results["wetted"] * discrepancy_pct / 100, 2)
+    exposed_model = results["wetted"] + discrepancy_area
+    if not close(exposed_model, results["exposed"], 1e-9):
         return None, (
-            f"capacity model gives {capacity_at_temp:.4f}, workbook has {capacity_temp_cached:.4f}"
+            f"discrepancy allowance gives {exposed_model:.6f} m2, "
+            f"workbook has {results['exposed']:.6f} m2"
         )
 
-    protection_model = exposed * cdu
-    if not close(protection_model, protection_current, 1e-9):
-        return None, f"protection current model gives {protection_model:.8f}, workbook has {protection_current:.8f}"
+    current, reason = select_current_density(design, design["current_density_cached"])
+    if current is None:
+        return None, reason
+    capacity, reason = select_capacity(design, design["capacity_temp_cached"])
+    if capacity is None:
+        return None, reason
+
+    protection_model = results["exposed"] * current["cdu"]
+    if not close(protection_model, results["protection_current"], 1e-9):
+        return None, (
+            f"protection current model gives {protection_model:.8f}, "
+            f"workbook has {results['protection_current']:.8f}"
+        )
 
     mass_model = (
         protection_model
-        * design_life
+        * design["life"]
         * HOURS_PER_YEAR
-        / capacity_at_temp
-        / utilization
-        * safety_factor
+        / capacity["capacity"]
+        / design["utilization"]
+        * design["safety_factor"]
     )
-    if not close(mass_model, mass, 1e-9):
-        return None, f"anode mass model gives {mass_model:.6f}, workbook has {mass:.6f}"
+    if not close(mass_model, results["mass"], 1e-9):
+        return None, f"anode mass model gives {mass_model:.6f}, workbook has {results['mass']:.6f}"
 
-    required_count = math.ceil(mass_model / anode_weight - 1e-9)
-    if int(selected) < required_count:
-        return None, f"workbook uses {int(selected)} anodes, model requires {required_count}"
+    required_count = math.ceil(mass_model / results["anode_weight"] - 1e-9)
+    if int(results["selected"]) < required_count:
+        return None, (
+            f"workbook uses {int(results['selected'])} anodes, "
+            f"model requires {required_count}"
+        )
 
     item = {
         "id": "",
@@ -271,37 +334,41 @@ def parse_sheet(sheet):
         "orientation": orientation,
         "surface": "internal",
         "method": "sacp",
-        "design_life_years": design_life,
-        "coating_breakdown": coating,
-        "apply_coating_breakdown": apply_coating,
-        "current_density_a_m2": current_density,
+        "design_life_years": design["life"],
+        "coating_breakdown": design["coating"],
+        "apply_coating_breakdown": current["apply_coating"],
+        "current_density_a_m2": design["current_density"],
         "temp_coefficient": TEMP_COEFFICIENT,
-        "design_temp_c": current_temp,
-        "operating_temp_c": capacity_temp,
-        "capacity_temp_c": capacity_temp,
-        "capacity_ah_kg": capacity,
-        "utilization": utilization,
-        "safety_factor": safety_factor,
-        "diameter_m": diameter or 0.0,
-        "length_m": length or 0.0,
-        "width_m": width or 0.0,
-        "liquid_height_m": liquid_height or 0.0,
+        "design_temp_c": current["temperature"],
+        "operating_temp_c": capacity["temperature"],
+        "capacity_temp_c": capacity["temperature"],
+        "capacity_ah_kg": design["capacity"],
+        "utilization": design["utilization"],
+        "safety_factor": design["safety_factor"],
+        "diameter_m": geometry["diameter"] or 0.0,
+        "length_m": geometry["length"] or 0.0,
+        "width_m": geometry["width"] or 0.0,
+        "height_m": 0.0,
+        "liquid_height_m": geometry["liquid_height"] or 0.0,
         "discrepancy_pct": discrepancy_pct,
         "current_density_override": None,
-        "anode_type": anode_type,
-        "anode_weight_kg": anode_weight,
-        "anode_output_a": anode_output,
-        "anodes_selected": int(selected),
+        "anode_type": results["anode_type"],
+        "anode_weight_kg": results["anode_weight"],
+        "anode_output_a": results["anode_output"],
+        "anodes_selected": int(results["selected"]),
         "rectifier": None,
-        "remark": f"Extracted from sheet '{sheet.name}' ({current_temp_basis} temp for current density, {capacity_basis} temp for capacity).",
+        "remark": (
+            f"Extracted from sheet '{sheet.name}' ({current['basis']} temp for current density, "
+            f"{capacity['basis']} temp for capacity)."
+        ),
     }
     expected = {
-        "wetted_area_m2": wetted,
-        "exposed_area_m2": exposed,
-        "current_density_a_m2": current_density_cached,
-        "capacity_at_temp_ah_kg": capacity_temp_cached,
-        "protection_current_a": protection_current,
-        "anode_mass_kg": mass,
+        "wetted_area_m2": results["wetted"],
+        "exposed_area_m2": results["exposed"],
+        "current_density_a_m2": design["current_density_cached"],
+        "capacity_at_temp_ah_kg": design["capacity_temp_cached"],
+        "protection_current_a": results["protection_current"],
+        "anode_mass_kg": results["mass"],
         "anodes_required": required_count,
     }
     return (item, expected), None
@@ -315,7 +382,7 @@ def main():
     expected = []
     skipped = []
     for sheet in workbook.sheets():
-        row, _ = find_label(sheet, r"Vessel Tag")
+        row, _ = find_label(sheet, TAG_LABEL)
         if row is None:
             continue
         parsed, reason = parse_sheet(sheet)

@@ -365,6 +365,7 @@ export interface CathodicItem {
   diameter_m: number
   length_m: number
   width_m: number
+  height_m: number
   liquid_height_m: number
   discrepancy_pct: number
   current_density_override: number | null

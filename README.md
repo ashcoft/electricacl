@@ -75,23 +75,38 @@ cp .env.example .env      # set AUTH_PASSWORD
 docker compose up -d
 ```
 
-With CAPTCHA:
+### CAPTCHA with Cap
+
+[Cap](https://github.com/tiagozip/cap) is a self-hosted, privacy-first CAPTCHA: the browser solves a
+proof-of-work challenge instead of clicking traffic lights. The image bundles the widget, and the app
+proxies the Cap API through `/cap/<site-key>/` so the CAPTCHA server never has to be publicly
+reachable and no CORS rules are involved.
 
 ```bash
-docker compose --profile captcha up -d
+cp .env.example .env                 # set AUTH_PASSWORD and CAP_ADMIN_KEY
+docker compose --profile captcha up -d          # app + Cap + Valkey
+ADMIN_KEY=$CAP_ADMIN_KEY ./tools/cap_create_site.sh electricacl
+# {"siteKey":"2186d3ff68","secretKey":"sk-..."}
 ```
 
-Then open <http://localhost:3000>, sign in with `CAP_ADMIN_KEY`, create a site, and copy its **site
-key** and **secret** into `.env`:
+Put the two values in `.env` and restart the app:
 
 ```dotenv
-CAP_API_ENDPOINT=http://localhost:3000/<site-key>/
-CAP_SECRET=<secret>
+CAP_UPSTREAM=http://cap:3000
+CAP_SITE_KEY=2186d3ff68
+CAP_SECRET=sk-...
 ```
 
-`docker compose up -d` again and the login form requires a solved challenge. The endpoint must be
-reachable from the browser, so use your public URL in production (and `COOKIE_SECURE=true` behind
-HTTPS).
+```bash
+docker compose up -d
+```
+
+The sign-in form now requires a solved challenge. The dashboard of the Cap server is on
+<http://localhost:3000> (password = `CAP_ADMIN_KEY`).
+
+If Cap is hosted somewhere public, skip the proxy and point the browser at it directly with
+`CAP_API_ENDPOINT=https://cap.example.com/<site-key>/` plus `CAP_SECRET`; that takes precedence over
+`CAP_UPSTREAM`/`CAP_SITE_KEY`. Set `COOKIE_SECURE=true` whenever the app is served over HTTPS.
 
 ## Configuration
 
@@ -103,8 +118,10 @@ HTTPS).
 | `AUTH_USERNAME`     | `admin`    | Sign-in user name                                            |
 | `AUTH_PASSWORD`     | generated  | Sign-in password (≥ 8 characters)                            |
 | `COOKIE_SECURE`     | `false`    | Mark the session cookie `Secure` (enable behind HTTPS)        |
-| `CAP_API_ENDPOINT`  | –          | Cap site endpoint, e.g. `https://cap.example.com/<site-key>/` |
-| `CAP_SECRET`        | –          | Cap site secret; must be set together with the endpoint      |
+| `CAP_API_ENDPOINT`  | –          | Public Cap site endpoint, e.g. `https://cap.example.com/<site>/` |
+| `CAP_UPSTREAM`      | –          | Internal Cap URL for same-origin mode, e.g. `http://cap:3000` |
+| `CAP_SITE_KEY`      | –          | Cap site key used by the `/cap/<site>/` proxy                |
+| `CAP_SECRET`        | –          | Cap site secret used for `siteverify`                        |
 | `RUST_LOG`          | `info`     | Log filter                                                   |
 
 The binary also answers `--healthcheck` (used by the image `HEALTHCHECK`) and `--reset-password`
@@ -120,8 +137,9 @@ The binary also answers `--healthcheck` (used by the image `HEALTHCHECK`) and `-
 - Every API route except `/api/health` and `/api/auth/*` requires a valid session; the SPA shell is
   public so the login page can load.
 - Cap is verified server-side against `<endpoint>/siteverify` with the site secret before a session
-  is issued. Without `CAP_API_ENDPOINT`/`CAP_SECRET` the challenge is skipped and the login page says
-  so.
+  is issued. The widget is bundled (works offline) and can talk to Cap through the app's own
+  `/cap/<site-key>/` proxy, so only one host has to be exposed.
+- Without CAPTCHA configuration the challenge is skipped and the login page says so.
 
 ## Interface
 

@@ -94,8 +94,12 @@ Releases are automated with semantic-release (`.releaserc.json`,
   generated once on first boot and logged. `electricacl --reset-password` regenerates it.
 - `api::router` splits public routes (`/api/health`, `/api/auth/*`) from protected ones, which go
   through `require_auth` middleware. The SPA shell is intentionally public so the login page loads.
-- `CAP_API_ENDPOINT` and `CAP_SECRET` must be set together or not at all; the process refuses to
-  start otherwise. Without them the challenge is skipped and the login page says so.
+- CAPTCHA configuration is either `CAP_API_ENDPOINT` + `CAP_SECRET` (public Cap instance) or
+  `CAP_UPSTREAM` + `CAP_SITE_KEY` + `CAP_SECRET` (same-origin). In the second mode the app serves
+  `/cap/<site-key>/{path}` as a whitelisted reverse proxy to `<upstream>/<site-key>/{path}`
+  (`api::cap_proxy`), so the browser never talks to Cap directly and no CORS is needed. Any other
+  site key or HTTP method is refused. A partial configuration makes the process exit at startup.
+- Without CAPTCHA configuration the challenge is skipped and the login page says so.
 - The frontend bundles `cap-widget` (lazy chunk) so the login page works on an air-gapped network;
   `vite.config.ts` declares `cap-*` as custom elements. It only loads when `cap_required` is true.
 - Session state is in `frontend/src/lib/auth.ts`; `api.onUnauthorized` clears it when the API returns

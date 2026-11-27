@@ -11,7 +11,7 @@ use tower_http::compression::CompressionLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
-use electricacl::api::{self, AppState};
+use electricacl::api::{self, AppState, CapProxy};
 use electricacl::auth::{Auth, CapConfig};
 use electricacl::store::Store;
 
@@ -75,13 +75,44 @@ async fn main() -> Result<()> {
     let cap_endpoint = env::var("CAP_API_ENDPOINT")
         .ok()
         .filter(|v| !v.trim().is_empty());
+    let cap_upstream = env::var("CAP_UPSTREAM")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let cap_site_key = env::var("CAP_SITE_KEY")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
     let cap_secret = env::var("CAP_SECRET").ok().filter(|v| !v.trim().is_empty());
-    let cap = match (cap_endpoint, cap_secret) {
-        (Some(endpoint), Some(secret)) => Some(CapConfig { endpoint, secret }),
-        (None, None) => None,
+
+    let (cap, cap_proxy) = match (cap_endpoint, cap_upstream, cap_site_key, cap_secret) {
+        // A publicly reachable Cap instance: the browser talks to it directly.
+        (Some(endpoint), _, _, Some(secret)) => {
+            let verify_url = format!("{}/siteverify", endpoint.trim_end_matches('/'));
+            (
+                Some(CapConfig {
+                    endpoint,
+                    verify_url,
+                    secret,
+                }),
+                None,
+            )
+        }
+        // Same-origin mode: the app proxies <upstream>/<site>/ through /cap/<site>/.
+        (None, Some(upstream), Some(site_key), Some(secret)) => {
+            let verify_url = format!("{}/{}/siteverify", upstream.trim_end_matches('/'), site_key);
+            (
+                Some(CapConfig {
+                    endpoint: format!("/cap/{site_key}/"),
+                    verify_url,
+                    secret,
+                }),
+                Some(CapProxy { upstream, site_key }),
+            )
+        }
+        (None, None, None, None) => (None, None),
         _ => {
             return Err(anyhow::anyhow!(
-                "CAP_API_ENDPOINT and CAP_SECRET must be set together (or neither)"
+                "CAPTCHA configuration is incomplete: set CAP_API_ENDPOINT + CAP_SECRET, or \
+                 CAP_UPSTREAM + CAP_SITE_KEY + CAP_SECRET"
             ))
         }
     };
@@ -106,8 +137,15 @@ async fn main() -> Result<()> {
         tracing::warn!("  change it with AUTH_PASSWORD or: electricacl --reset-password");
         tracing::warn!("==============================================================");
     }
-    if !auth.cap_required() {
-        tracing::info!("CAPTCHA disabled (set CAP_API_ENDPOINT and CAP_SECRET to enable Cap)");
+    if auth.cap_required() {
+        tracing::info!(
+            endpoint = %auth.cap_endpoint().unwrap_or_default(),
+            "Cap CAPTCHA enabled"
+        );
+    } else {
+        tracing::info!(
+            "CAPTCHA disabled (set CAP_API_ENDPOINT + CAP_SECRET, or CAP_UPSTREAM + CAP_SITE_KEY + CAP_SECRET)"
+        );
     }
 
     let store = Store::load(&data_dir)?;
@@ -123,6 +161,7 @@ async fn main() -> Result<()> {
     let state = Arc::new(AppState {
         store: RwLock::new(store),
         auth,
+        cap_proxy,
     });
 
     let index = static_dir.join("index.html");

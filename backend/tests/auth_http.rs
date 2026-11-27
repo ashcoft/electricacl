@@ -6,7 +6,7 @@ use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{header, Request, StatusCode};
 use axum::Router;
-use electricacl::api::{self, AppState};
+use electricacl::api::{self, AppState, CapProxy};
 use electricacl::auth::Auth;
 use electricacl::store::Store;
 use http_body_util::BodyExt;
@@ -32,6 +32,28 @@ async fn app() -> Router {
     let state = Arc::new(AppState {
         store: RwLock::new(store),
         auth,
+        cap_proxy: None,
+    });
+    api::router(state).layer(axum::middleware::from_fn(api::security_headers))
+}
+
+async fn app_with_cap_proxy() -> Router {
+    let dir = temp_dir();
+    let store = Store::load(&dir).expect("store loads from the embedded seed");
+    let (mut auth, _) =
+        Auth::load(&dir, "admin", Some("correct-horse"), None, false).expect("auth initialises");
+    auth.set_cap_for_test(electricacl::auth::CapConfig {
+        endpoint: "/cap/abc123/".into(),
+        verify_url: "http://127.0.0.1:9/abc123/siteverify".into(),
+        secret: "sk-test".into(),
+    });
+    let state = Arc::new(AppState {
+        store: RwLock::new(store),
+        auth,
+        cap_proxy: Some(CapProxy {
+            upstream: "http://127.0.0.1:9".into(),
+            site_key: "abc123".into(),
+        }),
     });
     api::router(state).layer(axum::middleware::from_fn(api::security_headers))
 }
@@ -167,4 +189,61 @@ async fn logout_clears_the_cookie() {
     assert_eq!(response.status(), StatusCode::OK);
     let cookie = response.headers()[header::SET_COOKIE].to_str().unwrap();
     assert!(cookie.contains("Max-Age=0"));
+}
+
+#[tokio::test]
+async fn cap_proxy_is_closed_unless_configured() {
+    let app = app().await;
+    let response = app
+        .oneshot(
+            request("POST", "/cap/abc123/challenge")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn cap_proxy_only_forwards_the_configured_site() {
+    let app = app_with_cap_proxy().await;
+
+    // The public config tells the browser to use the same-origin path.
+    let config = app
+        .clone()
+        .oneshot(
+            request("GET", "/api/auth/config")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = config.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["cap_required"], true);
+    assert_eq!(json["cap_endpoint"], "/cap/abc123/");
+
+    // Any other site key is rejected before a request leaves the process.
+    let wrong = app
+        .clone()
+        .oneshot(
+            request("POST", "/cap/other/challenge")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(wrong.status(), StatusCode::NOT_FOUND);
+
+    // Methods other than GET/POST never reach the proxy.
+    let put = app
+        .oneshot(
+            request("PUT", "/cap/abc123/challenge")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(put.status(), StatusCode::METHOD_NOT_ALLOWED);
 }

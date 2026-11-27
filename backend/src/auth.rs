@@ -40,15 +40,12 @@ struct StoredCredentials {
 
 #[derive(Debug, Clone)]
 pub struct CapConfig {
-    /// Base endpoint of the Cap server for this site, e.g. `https://cap.example.com/abc123/`.
+    /// Endpoint the browser widget talks to. Absolute
+    /// (`https://cap.example.com/<site>/`) or same-origin (`/cap/<site>/`).
     pub endpoint: String,
+    /// Absolute URL used for the server-side verification call.
+    pub verify_url: String,
     pub secret: String,
-}
-
-impl CapConfig {
-    fn siteverify_url(&self) -> String {
-        format!("{}/siteverify", self.endpoint.trim_end_matches('/'))
-    }
 }
 
 /// Public view of the authentication state, safe to hand to the browser.
@@ -250,6 +247,11 @@ impl Auth {
         Ok(password)
     }
 
+    /// Replace the CAPTCHA configuration (used by the HTTP tests).
+    pub fn set_cap_for_test(&mut self, cap: CapConfig) {
+        self.cap = Some(cap);
+    }
+
     pub fn cap_endpoint(&self) -> Option<String> {
         self.cap.as_ref().map(|cap| cap.endpoint.clone())
     }
@@ -333,7 +335,7 @@ impl Auth {
                     "Complete the CAPTCHA challenge before signing in".into(),
                 ));
             }
-            let endpoint = cap.siteverify_url();
+            let endpoint = cap.verify_url.clone();
             let secret = cap.secret.clone();
             let token = token.to_string();
             let verified =
@@ -593,7 +595,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("eacl-auth-{}", random_hex(6)));
         let (mut auth, _) = Auth::load(&dir, "admin", Some("correct-horse"), None, false).unwrap();
         auth.cap = Some(CapConfig {
-            endpoint: "http://127.0.0.1:9/site/".into(),
+            endpoint: "/cap/site/".into(),
+            verify_url: "http://127.0.0.1:9/site/siteverify".into(),
             secret: "secret".into(),
         });
         let peer: IpAddr = "10.0.0.11".parse().unwrap();

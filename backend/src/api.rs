@@ -1,9 +1,11 @@
 use std::fmt::Write as _;
+use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::extract::{ConnectInfo, Path, Request, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
@@ -17,9 +19,18 @@ use crate::calc::{self, ItemView, ScenarioSummary, StateView};
 use crate::models::{CalcSettings, LoadItem, MotorRef, ProjectMeta};
 use crate::store::Store;
 
+/// Same-origin reverse proxy for the Cap server, so the widget never needs a
+/// publicly reachable CAPTCHA host and no CORS rules are involved.
+#[derive(Debug, Clone)]
+pub struct CapProxy {
+    pub upstream: String,
+    pub site_key: String,
+}
+
 pub struct AppState {
     pub store: RwLock<Store>,
     pub auth: Auth,
+    pub cap_proxy: Option<CapProxy>,
 }
 
 /// User name attached to authenticated requests.
@@ -63,7 +74,8 @@ pub fn router(state: Shared) -> Router {
         .route("/api/health", get(health))
         .route("/api/auth/config", get(auth_config))
         .route("/api/auth/login", post(login))
-        .route("/api/auth/logout", post(logout));
+        .route("/api/auth/logout", post(logout))
+        .route("/cap/{site_key}/{*path}", get(cap_proxy).post(cap_proxy));
 
     let protected = Router::new()
         .route("/api/state", get(get_state))
@@ -125,6 +137,75 @@ async fn require_auth(State(state): State<Shared>, mut request: Request, next: N
         )
             .into_response(),
     }
+}
+
+/// Forward `GET|POST /cap/<site>/<path>` to `<upstream>/<site>/<path>`.
+///
+/// Only the configured site key is proxied, so this cannot be used to reach
+/// anything else on the Cap host.
+async fn cap_proxy(
+    State(state): State<Shared>,
+    Path((site_key, path)): Path<(String, String)>,
+    method: Method,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    let Some(proxy) = state.cap_proxy.clone() else {
+        return Err(ApiError::NotFound(
+            "CAPTCHA proxy is not enabled on this deployment".into(),
+        ));
+    };
+    if site_key != proxy.site_key {
+        return Err(ApiError::NotFound("unknown CAPTCHA site".into()));
+    }
+    let url = format!(
+        "{}/{}/{}",
+        proxy.upstream.trim_end_matches('/'),
+        site_key,
+        path
+    );
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("application/json")
+        .to_string();
+    let is_get = method == Method::GET;
+
+    let (status, content_type, payload) =
+        tokio::task::spawn_blocking(move || -> anyhow::Result<(u16, String, Vec<u8>)> {
+            let result = if is_get {
+                ureq::get(&url).call()
+            } else {
+                ureq::post(&url)
+                    .set("Content-Type", &content_type)
+                    .send_bytes(&body)
+            };
+            let response = match result {
+                Ok(response) => response,
+                Err(ureq::Error::Status(_, response)) => response,
+                Err(error) => anyhow::bail!("CAPTCHA upstream unreachable: {error}"),
+            };
+            let status = response.status();
+            let content_type = response
+                .header("content-type")
+                .unwrap_or("application/json")
+                .to_string();
+            let mut payload = Vec::new();
+            response.into_reader().read_to_end(&mut payload)?;
+            Ok((status, content_type, payload))
+        })
+        .await
+        .map_err(|error| ApiError::Internal(anyhow::anyhow!("CAPTCHA proxy failed: {error}")))??;
+
+    Ok((
+        StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY),
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "no-store".to_string()),
+        ],
+        payload,
+    )
+        .into_response())
 }
 
 async fn auth_config(State(state): State<Shared>, headers: HeaderMap) -> Json<AuthStatus> {

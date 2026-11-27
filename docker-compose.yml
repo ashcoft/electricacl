@@ -22,7 +22,12 @@ services:
       # print it to `docker compose logs app`.
       AUTH_PASSWORD: ${AUTH_PASSWORD:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # CAPTCHA: either a public Cap instance (CAP_API_ENDPOINT + CAP_SECRET)
+      # or the bundled Cap container through the app's /cap proxy
+      # (CAP_UPSTREAM + CAP_SITE_KEY + CAP_SECRET).
       CAP_API_ENDPOINT: ${CAP_API_ENDPOINT:-}
+      CAP_UPSTREAM: ${CAP_UPSTREAM:-}
+      CAP_SITE_KEY: ${CAP_SITE_KEY:-}
       CAP_SECRET: ${CAP_SECRET:-}
       RUST_LOG: ${RUST_LOG:-electricacl=info,tower_http=warn}
     volumes:
@@ -37,6 +42,9 @@ services:
   cap:
     image: tiago2/cap:4
     profiles: ["captcha"]
+    # Create a site once with:
+    #   ADMIN_KEY=$CAP_ADMIN_KEY ./tools/cap_create_site.sh electricacl
+    # then set CAP_SITE_KEY / CAP_SECRET and CAP_UPSTREAM=http://cap:3000
     container_name: electricacl-cap
     restart: unless-stopped
     ports:

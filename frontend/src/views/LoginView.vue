@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { auth, signIn } from '../lib/auth'
 
 const username = ref('')
@@ -7,6 +7,15 @@ const password = ref('')
 const capToken = ref<string | null>(null)
 const widgetHost = ref<HTMLElement | null>(null)
 const localError = ref('')
+
+// The server may expose the CAPTCHA through a same-origin path (/cap/<site>/),
+// which the widget needs as an absolute URL.
+const capEndpoint = computed(() => {
+  const endpoint = auth.capEndpoint
+  if (!endpoint) return null
+  if (/^https?:\/\//i.test(endpoint)) return endpoint
+  return new URL(endpoint, window.location.origin).toString()
+})
 
 onMounted(async () => {
   if (!auth.capRequired) return
@@ -114,7 +123,7 @@ function reset() {
 
         <div v-if="auth.capRequired" class="cap-box">
           <div ref="widgetHost" style="width: 100%">
-            <cap-widget :data-cap-api-endpoint="auth.capEndpoint" />
+            <cap-widget :data-cap-api-endpoint="capEndpoint" />
           </div>
         </div>
         <div v-else class="cap-hint" style="margin: 0 0 14px">

@@ -284,9 +284,14 @@ Dockerfile          multi-stage build, unprivileged runtime
 .github/workflows   CI, Release (semantic-release + versioned image), Container image (snapshots)
 ```
 
-Data flow: the seed is extracted once from `LOAD LIST.xlsx` (`make seed`) and embedded in the binary,
-so the image is self-contained. At runtime the service copies it into `DATA_DIR` on first start and
-persists every edit there.
+Data flow: the seed is extracted once from the source workbook (`make seed`) and embedded in the
+binary, so the image is self-contained. At runtime the service copies it into `DATA_DIR` on first
+start and persists every edit there.
+
+The source workbooks are tracked in the repository root for traceability — `LOAD LIST.xlsx`,
+`0000-EF-D-41335_0 Power Cable Sizing Calc.XLSX` and
+`Basic Cal SACP for Internal Tank - PT Pertamina MOR VII Sulawesi.xls` — but `.dockerignore` keeps
+them out of the image.
 
 ## Releases
 

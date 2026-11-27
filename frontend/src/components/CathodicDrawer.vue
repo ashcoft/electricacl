@@ -41,7 +41,8 @@ function strip(row: CathodicRow): CathodicItem {
 }
 
 function normalize(item: CathodicItem): CathodicItem {
-  const copy = structuredClone(toRaw(item))
+  const copy = { ...item }
+  if (copy.rectifier) copy.rectifier = { ...copy.rectifier }
   if (typeof copy.capacity_temp_c !== 'number' || !Number.isFinite(copy.capacity_temp_c)) {
     copy.capacity_temp_c = null
   }

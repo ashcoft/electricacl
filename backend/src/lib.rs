@@ -4,4 +4,5 @@ pub mod api;
 pub mod auth;
 pub mod calc;
 pub mod models;
+pub mod report;
 pub mod store;

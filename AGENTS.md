@@ -111,6 +111,15 @@ Releases are automated with semantic-release (`.releaserc.json`,
   cookie, wrong password rejected, logout clears it, replayed cookie rejected, security headers).
 - The browser-side calculation mirror has unit tests: `cd frontend && npm test` (vitest).
 
+## PDF report
+
+`backend/src/report.rs` renders the A4 report with `printpdf` and the base-14 fonts (Courier for
+tables, Helvetica for headings), so the file stays ~200 kB and needs no font files or browser.
+Tables are laid out with **character-based column widths** (`Column { chars }`) and a monospaced
+font; adding a column means adding a `Column` entry and one value per row, and keeping the total
+under ~130 characters at 6.5 pt. `ascii()` folds typographic characters into WinAnsi-safe text.
+Tests in `backend/tests/report.rs` parse the output with `lopdf` (page count, document title).
+
 ## UI theme
 
 The interface uses a light copper/orange engineering design language: Inter, white surfaces on

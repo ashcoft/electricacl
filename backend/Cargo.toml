@@ -11,6 +11,7 @@ argon2 = "0.5"
 axum = { version = "0.8", features = ["macros"] }
 base64 = "0.22"
 hmac = "0.12"
+printpdf = "0.7"
 rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -24,6 +25,7 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
+lopdf = "0.31"
 tower = { version = "0.5", features = ["util"] }
 
 [profile.release]

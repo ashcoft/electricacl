@@ -146,12 +146,15 @@ The binary also answers `--healthcheck` (used by the image `HEALTHCHECK`) and `-
 - **Dashboard** — KPI cards, load build-up per category, peak composition, generator sizing options,
   connected load by voltage level and area, scenario comparison, data-quality findings.
 - **Load list** — 656 consumers, filter by area/voltage/duty/class/status, search, sort, page, inline
-  edit of absorbed and rated power, CSV export.
+  edit of absorbed and rated power, CSV and PDF export.
 - **Consumer detail** — live recalculation while you type, with the formula and the substituted
   numbers on screen, plus warnings for a missing duty, a missing scenario or a motor rating that is
   not in the reference table.
 - **Motor data** — the 80-row efficiency / power factor reference table.
 - **Method & basis** — the calculation chain and the workbook verification.
+- **PDF report** — one click from the top bar or the dashboard: A4 report with the key figures, load
+  build-up, generator sizing, scenario comparison and the full load list (repeating header, page
+  numbers). Generated in the service, so it also works from the API without a browser.
 
 ![Load list](docs/load-list.png)
 
@@ -214,6 +217,7 @@ Session required (cookie `eacl_session`):
 | `PUT`    | `/api/load-items`                | Replace the whole list (`{"items": [...]}`) |
 | `POST`   | `/api/load-items/reset`          | Restore the embedded source data            |
 | `GET`    | `/api/export/csv`                | CSV export including all derived values     |
+| `GET`    | `/api/export/pdf?scenario=normal` | PDF report: summary, scenarios, load list   |
 
 Example:
 

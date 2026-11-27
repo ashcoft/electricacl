@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::body::Bytes;
-use axum::extract::{ConnectInfo, Path, Request, State};
+use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -16,7 +16,7 @@ use tokio::sync::RwLock;
 
 use crate::auth::{self, Auth, AuthStatus, LoginError};
 use crate::calc::{self, ItemView, ScenarioSummary, StateView};
-use crate::models::{CalcSettings, LoadItem, MotorRef, ProjectMeta};
+use crate::models::{CalcSettings, LoadItem, MotorRef, ProjectMeta, Scenario};
 use crate::store::Store;
 
 /// Same-origin reverse proxy for the Cap server, so the widget never needs a
@@ -87,6 +87,7 @@ pub fn router(state: Shared) -> Router {
         .route("/api/load-items/{id}", put(update_item).delete(delete_item))
         .route("/api/load-items/{id}/duplicate", post(duplicate_item))
         .route("/api/export/csv", get(export_csv))
+        .route("/api/export/pdf", get(export_pdf))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     public.merge(protected).with_state(state)
@@ -463,6 +464,47 @@ async fn export_csv(State(state): State<Shared>) -> Result<Response, ApiError> {
             ),
         ],
         csv,
+    )
+        .into_response())
+}
+
+#[derive(Deserialize)]
+struct ReportQuery {
+    #[serde(default)]
+    scenario: Option<String>,
+}
+
+async fn export_pdf(
+    State(state): State<Shared>,
+    Query(query): Query<ReportQuery>,
+) -> Result<Response, ApiError> {
+    let scenario = match query.scenario.as_deref() {
+        None => Scenario::Normal,
+        Some(key) => Scenario::ALL
+            .into_iter()
+            .find(|candidate| candidate.key() == key)
+            .ok_or_else(|| ApiError::BadRequest(format!("unknown scenario '{key}'")))?,
+    };
+
+    let store = state.store.read().await;
+    let view = store.state();
+    drop(store);
+
+    let pdf = tokio::task::spawn_blocking(move || crate::report::render(&view, scenario))
+        .await
+        .map_err(|error| ApiError::Internal(anyhow::anyhow!("report task failed: {error}")))??;
+
+    let filename = format!("load-list-{}.pdf", scenario.key());
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/pdf".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}\""),
+            ),
+            (header::CACHE_CONTROL, "no-store".to_string()),
+        ],
+        pdf,
     )
         .into_response())
 }

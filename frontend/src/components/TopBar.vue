@@ -45,6 +45,14 @@ async function logout() {
       <a class="btn" :href="api.exportUrl" download title="Export the load list as CSV">
         ↓ CSV
       </a>
+      <a
+        class="btn"
+        :href="`${api.pdfUrl}?scenario=${ui.scenario}`"
+        download
+        title="Download the calculation report as PDF"
+      >
+        ↓ PDF
+      </a>
       <button class="btn primary" @click="ui.createOpen = true">+ New item</button>
       <button class="btn icon" title="Sign out" @click="logout">⏻</button>
     </div>

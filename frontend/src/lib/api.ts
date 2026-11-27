@@ -70,4 +70,5 @@ export const api = {
     request<{ restored: number }>('/api/load-items/reset', { method: 'POST' }),
 
   exportUrl: '/api/export/csv',
+  pdfUrl: '/api/export/pdf',
 }

@@ -81,6 +81,16 @@ impl Duty {
             Duty::Spare => "Spare",
         }
     }
+
+    /// Compact code used in dense reports: C / I / SB / SP.
+    pub fn short(self) -> &'static str {
+        match self {
+            Duty::Continuous => "C",
+            Duty::Intermittent => "I",
+            Duty::Standby => "SB",
+            Duty::Spare => "SP",
+        }
+    }
 }
 
 /// Motor / feeder / other electrical user. Decides the efficiency and power

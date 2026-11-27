@@ -122,6 +122,14 @@ function reviewWarnings() {
       </div>
       <div class="spacer" />
       <div class="spread">
+        <a
+          class="btn"
+          :href="`/api/export/pdf?scenario=${summary.scenario}`"
+          download
+          title="Download this scenario as a PDF report"
+        >
+          ↓ PDF report
+        </a>
         <button class="btn" @click="ui.view = 'method'">Method &amp; basis</button>
         <button class="btn" @click="ui.settingsOpen = true">⚙ Factors</button>
       </div>

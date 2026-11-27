@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { fmt, fmtPct } from '../lib/format'
 import { data } from '../store'
+import Icon from '../components/Icon.vue'
 
 const search = ref('')
 
@@ -36,7 +37,7 @@ const rows = computed(() => {
       </div>
       <div class="spacer" />
       <div class="search">
-        <span class="icon">⌕</span>
+        <span class="icon"><Icon name="search" :size="13" /></span>
         <input v-model="search" class="input" placeholder="Filter by rating (kW)" />
       </div>
     </div>

@@ -45,14 +45,20 @@ export async function signIn(username: string, password: string, capToken: strin
   }
 }
 
-export async function signOut() {
+export async function signOut(): Promise<{ revoked: boolean }> {
+  let revoked = true
   try {
     await api.logout()
-  } catch {
-    /* the cookie is cleared server-side even if the call fails */
+  } catch (error) {
+    // The UI signs out locally either way, but the token may still be valid on
+    // the server, so say so instead of failing silently.
+    revoked = false
+    console.warn('sign-out request failed', error)
   }
   auth.authenticated = false
   auth.user = null
+  auth.error = ''
+  return { revoked }
 }
 
 onUnauthorized(() => {

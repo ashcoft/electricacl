@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import BarList from '../components/BarList.vue'
+import Icon from '../components/Icon.vue'
 import StackedBar from '../components/StackedBar.vue'
 import StatCard from '../components/StatCard.vue'
 import { fmt, fmtPct } from '../lib/format'
@@ -131,7 +132,9 @@ function reviewWarnings() {
           ↓ PDF report
         </a>
         <button class="btn" @click="ui.view = 'method'">Method &amp; basis</button>
-        <button class="btn" @click="ui.settingsOpen = true">⚙ Factors</button>
+        <button class="btn" @click="ui.settingsOpen = true">
+          <Icon name="settings" :size="14" /> Factors
+        </button>
       </div>
     </div>
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import Icon from '../components/Icon.vue'
 import { fmt, fmtPct, fmtSmart } from '../lib/format'
 import {
   currentSummary,
@@ -177,7 +178,7 @@ function warningTitle(item: ItemView): string {
     <section class="card">
       <div class="card-head" style="flex-wrap: wrap; gap: 10px">
         <div class="search">
-          <span class="icon">⌕</span>
+          <span class="icon"><Icon name="search" :size="13" /></span>
           <input
             v-model="ui.filters.search"
             data-search
@@ -390,9 +391,23 @@ function warningTitle(item: ItemView): string {
           <option :value="250">250 / page</option>
           <option :value="500">500 / page</option>
         </select>
-        <button class="btn sm" :disabled="ui.page <= 1" @click="ui.page -= 1">←</button>
+        <button
+          class="btn sm"
+          :disabled="ui.page <= 1"
+          title="Previous page"
+          @click="ui.page -= 1"
+        >
+          <Icon name="chevron-left" :size="13" />
+        </button>
         <span class="small mono">{{ ui.page }} / {{ pageCount }}</span>
-        <button class="btn sm" :disabled="ui.page >= pageCount" @click="ui.page += 1">→</button>
+        <button
+          class="btn sm"
+          :disabled="ui.page >= pageCount"
+          title="Next page"
+          @click="ui.page += 1"
+        >
+          <Icon name="chevron-right" :size="13" />
+        </button>
       </div>
     </section>
 

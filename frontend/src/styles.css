@@ -895,7 +895,11 @@ textarea.input {
   border-color: #eab0b0;
 }
 .btn.icon {
-  padding: 8px 10px;
+  padding: 8px;
+  line-height: 0;
+}
+.btn svg {
+  vertical-align: middle;
 }
 .btn.sm {
   padding: 5px 10px;

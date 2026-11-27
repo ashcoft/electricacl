@@ -31,6 +31,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --create-home --home-dir /app app
 
+ARG APP_VERSION=dev
+
 WORKDIR /app
 COPY --from=backend /app/target/release/electricacl /usr/local/bin/electricacl
 COPY --from=frontend /app/dist /app/static
@@ -38,7 +40,8 @@ COPY --from=frontend /app/dist /app/static
 RUN mkdir -p /app/data && chown -R app:app /app
 USER app
 
-ENV PORT=8080 \
+ENV APP_VERSION=${APP_VERSION} \
+    PORT=8080 \
     DATA_DIR=/app/data \
     STATIC_DIR=/app/static \
     RUST_LOG=electricacl=info,tower_http=warn

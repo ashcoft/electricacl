@@ -61,11 +61,15 @@ pub fn router(state: Shared) -> Router {
         .with_state(state)
 }
 
+fn app_version() -> String {
+    std::env::var("APP_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_string())
+}
+
 async fn health() -> Json<serde_json::Value> {
     Json(json!({
         "status": "ok",
         "service": "electricacl",
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": app_version(),
     }))
 }
 

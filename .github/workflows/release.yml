@@ -41,6 +41,11 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Install release tooling
         run: npm ci --no-audit --no-fund
 
@@ -106,6 +111,7 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: APP_VERSION=${{ needs.release.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

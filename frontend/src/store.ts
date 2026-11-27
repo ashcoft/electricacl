@@ -156,17 +156,25 @@ export function saveCableReference(reference: CableReference[]) {
 
 async function mutateCathodic<T>(action: () => Promise<T>, successMessage?: string) {
   ui.busy = true
+  let result: T
   try {
-    const result = await action()
-    data.cathodic = await api.getCathodicState()
-    if (successMessage) toast('success', successMessage)
-    return result
+    result = await action()
   } catch (error) {
     toast('error', error instanceof Error ? error.message : String(error))
-    return null
-  } finally {
     ui.busy = false
+    return null
   }
+  try {
+    data.cathodic = await api.getCathodicState()
+  } catch (error) {
+    toast(
+      'error',
+      `Saved, but refreshing the schedule failed: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  ui.busy = false
+  if (successMessage) toast('success', successMessage)
+  return result
 }
 
 export function saveCathodicItem(item: CathodicItem) {

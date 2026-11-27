@@ -106,6 +106,15 @@ def close(a, b, tolerance=1e-9):
 TAG_LABEL = r"Vessel Tag"
 DISCREPANCY_LABEL = r"Discrepancy"
 
+# Sheets whose formulas deliberately fall outside the shared model. Any other
+# parse failure is an extraction error, not a silent omission.
+SKIPPED_SHEETS = {
+    "53-vz-2801": "partial-shell area omits the diameter",
+    "medco": "current density mixes CBf into the temperature term",
+    "daekyung": "current density mixes CBf into the temperature term",
+    "Multifab MEPI": "50 % wetted-area allowance",
+}
+
 
 def parse_identification(sheet):
     tag = first_text(sheet, TAG_LABEL)
@@ -387,8 +396,10 @@ def main():
             continue
         parsed, reason = parse_sheet(sheet)
         if parsed is None:
-            skipped.append((sheet.name, reason))
-            continue
+            if sheet.name in SKIPPED_SHEETS:
+                skipped.append((sheet.name, reason))
+                continue
+            sys.exit(f"sheet '{sheet.name}' no longer reproduces the model: {reason}")
         item, values = parsed
         items.append(item)
         expected.append(values)

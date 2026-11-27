@@ -81,7 +81,23 @@ impl CathodicStore {
                     );
                 }
                 Err(error) => {
-                    tracing::warn!(%error, "cathodic state file is corrupt, falling back to the seed");
+                    let stamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|duration| duration.as_secs())
+                        .unwrap_or(0);
+                    let backup = store.path.with_extension(format!("json.corrupt-{stamp}"));
+                    match fs::rename(&store.path, &backup) {
+                        Ok(()) => tracing::warn!(
+                            %error,
+                            backup = %backup.display(),
+                            "cathodic state file is corrupt, preserved it and fell back to the seed"
+                        ),
+                        Err(rename_error) => tracing::warn!(
+                            %error,
+                            %rename_error,
+                            "cathodic state file is corrupt, falling back to the seed"
+                        ),
+                    }
                 }
             }
         }
@@ -161,6 +177,31 @@ impl CathodicStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn corrupt_state_is_preserved_before_the_seed_is_written() {
+        let dir = std::env::temp_dir().join(format!(
+            "eacl-cathodic-corrupt-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(STATE_FILE);
+        fs::write(&path, "{ not json").unwrap();
+        let store = CathodicStore::load(&dir).unwrap();
+        assert_eq!(store.state().items.len(), 23);
+        assert!(!path.exists());
+        let backups = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
+            .count();
+        assert_eq!(backups, 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn failed_write_does_not_publish_the_mutation() {

@@ -203,7 +203,7 @@ export function computeCathodicDerived(item: CathodicItem): CathodicDerived {
   const exposed = wetted + discrepancyArea
   const protectionCurrent = exposed * density
 
-  if (capacityAtTemp <= 0) {
+  if (item.method === 'sacp' && capacityAtTemp <= 0) {
     warnings.push({
       code: 'capacity_not_positive',
       message: `Anode capacity at ${capacityTemp.toFixed(1)} °C is ${capacityAtTemp.toFixed(1)} Ah/kg - the mass balance cannot be closed`,
@@ -248,7 +248,7 @@ export function computeCathodicDerived(item: CathodicItem): CathodicDerived {
   }
 
   const checks: CathodicChecks = {
-    capacity: capacityAtTemp > 0,
+    capacity: item.method === 'iccp' || capacityAtTemp > 0,
     current_density: density > 0,
     anode_count: sizingAvailable && item.anodes_selected >= required,
     design_life: designLifeOk(item.method, lifeYears, item.design_life_years),

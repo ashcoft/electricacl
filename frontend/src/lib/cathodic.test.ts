@@ -112,4 +112,30 @@ describe('cathodic protection mirror', () => {
       computeCathodicDerived({ ...base, capacity_temp_c: 25 }).capacity_at_temp_ah_kg,
     ).toBeCloseTo(2365, 9)
   })
+
+  it('does not apply the SACP capacity check to ICCP', () => {
+    const item = {
+      ...blankCathodicItem(),
+      method: 'iccp' as const,
+      structure: 'pipeline' as const,
+      diameter_m: 0.5,
+      length_m: 100,
+      current_density_a_m2: 0.05,
+      apply_coating_breakdown: false,
+      discrepancy_pct: 0,
+      capacity_ah_kg: 0,
+      anodes_selected: 20,
+      rectifier: {
+        anode_output_a: 10,
+        groundbed_resistance_ohm: 1,
+        cable_resistance_ohm: 0.2,
+        back_emf_v: 2,
+        margin_pct: 20,
+      },
+    }
+    const derived = computeCathodicDerived(item)
+    expect(derived.checks.capacity).toBe(true)
+    expect(derived.warnings.some((warning) => warning.code === 'capacity_not_positive')).toBe(false)
+    expect(derived.acceptable).toBe(true)
+  })
 })

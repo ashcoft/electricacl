@@ -748,10 +748,19 @@ async fn reset_items(State(state): State<Shared>) -> Result<Json<serde_json::Val
 }
 
 fn csv_escape(value: &str) -> String {
-    if value.contains([',', '"', '\n']) {
-        format!("\"{}\"", value.replace('"', "\"\""))
+    let neutralized = if value
+        .chars()
+        .next()
+        .is_some_and(|first| matches!(first, '=' | '+' | '-' | '@' | '\t' | '\r'))
+    {
+        format!("'{value}")
     } else {
         value.to_string()
+    };
+    if neutralized.contains([',', '"', '\n']) {
+        format!("\"{}\"", neutralized.replace('"', "\"\""))
+    } else {
+        neutralized
     }
 }
 
@@ -887,4 +896,19 @@ pub fn summaries_for(
     settings: &CalcSettings,
 ) -> Vec<ScenarioSummary> {
     calc::summarize(items, table, settings)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::csv_escape;
+
+    #[test]
+    fn csv_escape_neutralizes_formula_prefixes() {
+        assert_eq!(csv_escape("=1+1"), "'=1+1");
+        assert_eq!(csv_escape("+SUM(A1)"), "'+SUM(A1)");
+        assert_eq!(csv_escape("-tag"), "'-tag");
+        assert_eq!(csv_escape("@cmd"), "'@cmd");
+        assert_eq!(csv_escape("normal"), "normal");
+        assert_eq!(csv_escape("a,b"), "\"a,b\"");
+    }
 }

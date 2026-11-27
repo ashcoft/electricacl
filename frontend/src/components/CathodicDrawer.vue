@@ -198,6 +198,7 @@ async function remove() {
           </div>
         </div>
 
+        <fieldset :disabled="saving" class="drawer-fields">
         <div>
           <div class="section-title">Identification</div>
           <div class="form-grid">
@@ -413,11 +414,12 @@ async function remove() {
             placeholder="Basis of the data, references, notes…"
           />
         </div>
+        </fieldset>
       </div>
 
       <div class="drawer-foot">
-        <button class="btn danger" @click="confirmDelete = true">Delete</button>
-        <button class="btn" @click="duplicate">Duplicate</button>
+        <button class="btn danger" :disabled="saving" @click="confirmDelete = true">Delete</button>
+        <button class="btn" :disabled="saving" @click="duplicate">Duplicate</button>
         <div class="spacer" style="margin-left: auto" />
         <button class="btn" :class="{ primary: dirty }" :disabled="!dirty || saving" @click="save">
           {{ saving ? 'Saving…' : dirty ? 'Save changes' : '✓ Saved' }}

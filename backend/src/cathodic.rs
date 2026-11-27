@@ -574,7 +574,7 @@ pub fn derive(item: &CathodicItem) -> CathodicDerived {
     let exposed = wetted + discrepancy_area;
     let protection_current = exposed * current_density;
 
-    if capacity_at_temp <= 0.0 {
+    if item.method == Method::Sacp && capacity_at_temp <= 0.0 {
         warnings.push(CathodicWarning {
             code: "capacity_not_positive",
             message: format!(
@@ -638,7 +638,7 @@ pub fn derive(item: &CathodicItem) -> CathodicDerived {
     };
 
     let checks = CathodicChecks {
-        capacity: capacity_at_temp > 0.0,
+        capacity: item.method == Method::Iccp || capacity_at_temp > 0.0,
         current_density: current_density > 0.0,
         anode_count: sizing_available && item.anodes_selected >= anode_count,
         design_life: life_years
@@ -852,5 +852,32 @@ mod tests {
             ..CathodicItem::default()
         };
         assert_eq!(effective_anode_output(&iccp), Some(5.0));
+    }
+
+    #[test]
+    fn iccp_does_not_use_the_sacp_capacity_check() {
+        let item = CathodicItem {
+            method: Method::Iccp,
+            structure: Structure::Pipeline,
+            diameter_m: 0.5,
+            length_m: 100.0,
+            current_density_a_m2: 0.05,
+            apply_coating_breakdown: false,
+            discrepancy_pct: 0.0,
+            capacity_ah_kg: 0.0,
+            anodes_selected: 20,
+            rectifier: Some(RectifierInputs {
+                anode_output_a: 10.0,
+                ..RectifierInputs::default()
+            }),
+            ..CathodicItem::default()
+        };
+        let derived = derive(&item);
+        assert!(derived.checks.capacity);
+        assert!(!derived
+            .warnings
+            .iter()
+            .any(|warning| warning.code == "capacity_not_positive"));
+        assert!(derived.acceptable);
     }
 }

@@ -1,3 +1,18 @@
+# [1.1.0](https://github.com/ashcoft/electricacl/compare/v1.0.0...v1.1.0) (2026-11-27)
+
+
+### Bug Fixes
+
+* address cathodic protection review findings ([f34e0a9](https://github.com/ashcoft/electricacl/commit/f34e0a9217258654d3338fc1187efd8871f1c090))
+* clone raw cathodic drawer rows ([f2601e0](https://github.com/ashcoft/electricacl/commit/f2601e0c179b3bdb9338c5b7db63fb1acdb59d0c))
+* harden cathodic protection review follow-ups ([0ae3ec2](https://github.com/ashcoft/electricacl/commit/0ae3ec2b9b06fc45a5501d2f59897b873595bf68))
+* keep cathodic drawer dirty tracking reactive ([77cb632](https://github.com/ashcoft/electricacl/commit/77cb63267c4778039654e41a178f7eb20c5b3c5a))
+
+
+### Features
+
+* cathodic protection calculation (03) ([a1c4c66](https://github.com/ashcoft/electricacl/commit/a1c4c66058a9fcd21277074fda45b4c799bcc51a))
+
 # 1.0.0 (2026-11-27)
 
 

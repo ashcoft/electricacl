@@ -63,9 +63,10 @@ workbook itself.
 
 - `axum` 0.8 path params use `{id}` syntax.
 - The image healthcheck calls the binary with `--healthcheck`; there is no curl in the runtime image.
-- `.dockerignore` excludes `*.xlsx`; the seed JSON is committed instead.
-- Source workbooks (`LOAD LIST.xlsx`, and future cable-sizing / cathodic-protection files) are inputs
-  kept outside the image.
+- `.dockerignore` excludes `*.xlsx` / `*.xls`; the seed JSON is committed instead.
+- The source workbooks are tracked in the repository root (`LOAD LIST.xlsx`,
+  `0000-EF-D-41335_0 Power Cable Sizing Calc.XLSX`, `Basic Cal SACP for Internal Tank - ...xls`) so
+  every seed can be traced back to its document, but they are never copied into the image.
 
 ## Releases
 

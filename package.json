@@ -1,0 +1,21 @@
+{
+  "name": "electricacl",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Electrical load list calculation service (Rust API + Vue UI)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ashcoft/electricacl.git"
+  },
+  "license": "MIT",
+  "scripts": {
+    "release": "semantic-release",
+    "release:dry": "semantic-release --dry-run"
+  },
+  "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/exec": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "semantic-release": "^24.2.0"
+  }
+}

@@ -175,7 +175,13 @@ async fn login(
     }
 }
 
-async fn logout(State(state): State<Shared>) -> Response {
+async fn logout(State(state): State<Shared>, headers: HeaderMap) -> Response {
+    let header = headers
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok());
+    if let Some(token) = auth::session_from_cookie_header(header) {
+        state.auth.revoke(&token);
+    }
     (
         [(header::SET_COOKIE, state.auth.expired_cookie())],
         Json(json!({ "ok": true })),

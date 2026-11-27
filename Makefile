@@ -18,7 +18,7 @@ build:
 
 test:
 	cd backend && cargo test --all-targets
-	cd frontend && npm run typecheck
+	cd frontend && npm run typecheck && npm test
 
 fmt:
 	cd backend && cargo fmt

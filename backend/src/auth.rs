@@ -88,6 +88,9 @@ pub struct Auth {
     cookie_secure: bool,
     path: PathBuf,
     limiter: Mutex<HashMap<IpAddr, Attempts>>,
+    /// Session ids revoked by an explicit sign-out, with their expiry so the
+    /// list can be pruned.
+    revoked: Mutex<HashMap<String, i64>>,
 }
 
 fn random_hex(bytes: usize) -> String {
@@ -212,6 +215,7 @@ impl Auth {
                 cookie_secure,
                 path,
                 limiter: Mutex::new(HashMap::new()),
+                revoked: Mutex::new(HashMap::new()),
             },
             generated,
         ))
@@ -358,10 +362,18 @@ impl Auth {
         let payload = serde_json::json!({
             "sub": self.username,
             "exp": now_seconds() + SESSION_TTL_SECONDS,
+            "jti": random_hex(8),
         });
         let payload = URL_SAFE_NO_PAD.encode(payload.to_string());
         let signature = self.sign(payload.as_bytes());
         format!("{payload}.{signature}")
+    }
+
+    fn verify_signature(&self, payload: &[u8], signature: &str) -> Result<(), ()> {
+        let signature = URL_SAFE_NO_PAD.decode(signature).map_err(|_| ())?;
+        let mut mac = HmacSha256::new_from_slice(&self.session_secret).map_err(|_| ())?;
+        mac.update(payload);
+        mac.verify_slice(&signature).map_err(|_| ())
     }
 
     fn sign(&self, payload: &[u8]) -> String {
@@ -374,10 +386,7 @@ impl Auth {
     /// Validate a session cookie and return the user name it carries.
     pub fn verify_token(&self, token: &str) -> Option<String> {
         let (payload, signature) = token.rsplit_once('.')?;
-        let signature = URL_SAFE_NO_PAD.decode(signature).ok()?;
-        let mut mac = HmacSha256::new_from_slice(&self.session_secret).ok()?;
-        mac.update(payload.as_bytes());
-        mac.verify_slice(&signature).ok()?;
+        self.verify_signature(payload.as_bytes(), signature).ok()?;
 
         let decoded = URL_SAFE_NO_PAD.decode(payload).ok()?;
         let claims: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
@@ -389,7 +398,50 @@ impl Auth {
         if sub != self.username {
             return None;
         }
+        if let Some(jti) = claims.get("jti").and_then(serde_json::Value::as_str) {
+            let revoked = self.revoked.lock().ok()?;
+            if revoked.contains_key(jti) {
+                return None;
+            }
+        }
         Some(sub.to_string())
+    }
+
+    /// Invalidate a token immediately, so a copied cookie stops working as soon
+    /// as the user signs out. The entry is dropped once the token would have
+    /// expired anyway.
+    pub fn revoke(&self, token: &str) {
+        let Some((payload, signature)) = token.rsplit_once('.') else {
+            return;
+        };
+        // Only revoke a token this server actually signed.
+        if self
+            .verify_signature(payload.as_bytes(), signature)
+            .is_err()
+        {
+            return;
+        }
+        let Ok(decoded) = URL_SAFE_NO_PAD.decode(payload) else {
+            return;
+        };
+        let Ok(claims) = serde_json::from_slice::<serde_json::Value>(&decoded) else {
+            return;
+        };
+        let Some(jti) = claims.get("jti").and_then(|value| value.as_str()) else {
+            return;
+        };
+        let exp = claims
+            .get("exp")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0);
+        if exp < now_seconds() {
+            return;
+        }
+        if let Ok(mut revoked) = self.revoked.lock() {
+            let now = now_seconds();
+            revoked.retain(|_, expiry| *expiry > now);
+            revoked.insert(jti.to_string(), exp);
+        }
     }
 
     pub fn session_cookie(&self, token: &str) -> String {
@@ -458,6 +510,27 @@ mod tests {
         assert!(auth.verify_token(&tampered).is_none());
         assert!(auth.verify_token("not-a-token").is_none());
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn revoked_token_is_rejected() {
+        let dir = std::env::temp_dir().join(format!("eacl-auth-{}", random_hex(6)));
+        let auth = auth_in(&dir);
+        let token = auth.issue_token();
+        assert!(auth.verify_token(&token).is_some());
+
+        auth.revoke(&token);
+        assert!(
+            auth.verify_token(&token).is_none(),
+            "signed-out token still valid"
+        );
+
+        // A token that was never issued by this server cannot be revoked in a
+        // way that affects anything else.
+        let other = auth.issue_token();
+        auth.revoke("garbage.signature");
+        assert!(auth.verify_token(&other).is_some());
         let _ = fs::remove_dir_all(&dir);
     }
 

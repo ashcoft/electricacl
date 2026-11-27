@@ -100,8 +100,12 @@ Releases are automated with semantic-release (`.releaserc.json`,
   `vite.config.ts` declares `cap-*` as custom elements. It only loads when `cap_required` is true.
 - Session state is in `frontend/src/lib/auth.ts`; `api.onUnauthorized` clears it when the API returns
   401, so an expired cookie drops the user back to the login screen.
+- Sign-out revokes the token: every session carries a `jti`, `Auth::revoke` records it until expiry,
+  and `verify_token` rejects it, so a copied cookie stops working immediately. The list is in memory
+  only, so a restart forgets revocations (tokens still expire on their own).
 - HTTP-level behaviour is covered by `backend/tests/auth_http.rs` (401 without cookie, login sets a
-  cookie, wrong password rejected, logout clears it).
+  cookie, wrong password rejected, logout clears it, replayed cookie rejected, security headers).
+- The browser-side calculation mirror has unit tests: `cd frontend && npm test` (vitest).
 
 ## UI theme
 

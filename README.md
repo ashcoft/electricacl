@@ -162,10 +162,12 @@ cd backend && STATIC_DIR=../frontend/dist cargo run
 Tests and checks:
 
 ```bash
-make test     # cargo test + vue-tsc
+make test     # cargo test + vue-tsc + vitest
 make lint     # cargo clippy -D warnings
 make fmt
 ```
+
+The frontend unit tests cover the browser-side calculation mirror (`frontend/src/lib/calc.test.ts`).
 
 ## API
 

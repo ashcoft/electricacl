@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRaw, watch } from 'vue'
 import { computeCathodicDerived, methodLabel, scopeLabel } from '../lib/cathodic'
 import { fmt } from '../lib/format'
 import {
@@ -35,13 +35,13 @@ function defaultRectifier(): RectifierInputs {
 }
 
 function strip(row: CathodicRow): CathodicItem {
-  const copy = structuredClone(row) as unknown as Record<string, unknown>
+  const copy = structuredClone(toRaw(row)) as unknown as Record<string, unknown>
   delete copy.derived
   return copy as unknown as CathodicItem
 }
 
 function normalize(item: CathodicItem): CathodicItem {
-  const copy = structuredClone(item)
+  const copy = structuredClone(toRaw(item))
   if (typeof copy.capacity_temp_c !== 'number' || !Number.isFinite(copy.capacity_temp_c)) {
     copy.capacity_temp_c = null
   }

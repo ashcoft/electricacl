@@ -137,6 +137,13 @@ export interface Options {
   switchgears: string[]
 }
 
+export interface AuthStatus {
+  authenticated: boolean
+  user: string | null
+  cap_endpoint: string | null
+  cap_required: boolean
+}
+
 export interface Stats {
   items: number
   items_with_power: number
@@ -177,10 +184,10 @@ export const CLASSES: { key: ClassKey; label: string }[] = [
 ]
 
 export const DUTY_COLORS: Record<DutyKey, string> = {
-  continuous: '#22d3ee',
-  intermittent: '#fbbf24',
-  standby: '#a78bfa',
-  spare: '#5b7185',
+  continuous: '#ff7a18',
+  intermittent: '#eab308',
+  standby: '#7c3aed',
+  spare: '#94a3b8',
 }
 
 export function scenarioLabel(key: ScenarioKey): string {

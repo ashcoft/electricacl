@@ -94,7 +94,7 @@ async function submit() {
           </div>
           <div class="field">
             <label>Consumed load</label>
-            <div class="input num" style="background: #0b141b; color: var(--accent)">
+            <div class="input num" style="background: var(--brand-tint); color: var(--brand-dark); font-weight: 600">
               {{ fmt(derived.consumed_kw, 2) }} kW · {{ fmt(derived.flc_a, 1) }} A
             </div>
           </div>

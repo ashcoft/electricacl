@@ -304,7 +304,7 @@ function warningTitle(item: ItemView): string {
                 <span
                   v-else
                   class="nowrap"
-                  style="border-bottom: 1px dashed rgba(112, 134, 153, 0.4); cursor: text"
+                  style="border-bottom: 1px dashed var(--line-strong); cursor: text"
                   title="Double-click to edit"
                   @dblclick="startEdit(item, 'absorbed_kw', $event)"
                 >
@@ -327,7 +327,7 @@ function warningTitle(item: ItemView): string {
                 <span
                   v-else
                   class="nowrap"
-                  style="border-bottom: 1px dashed rgba(112, 134, 153, 0.3); cursor: text"
+                  style="border-bottom: 1px dashed var(--line-strong); cursor: text"
                   title="Double-click to edit"
                   @dblclick="startEdit(item, 'rated_kw', $event)"
                 >

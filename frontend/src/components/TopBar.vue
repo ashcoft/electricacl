@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { data, setScenario, ui } from '../store'
+import { data, resetData, setScenario, ui } from '../store'
 import { SCENARIOS } from '../types'
 import { api } from '../lib/api'
+import { auth, signOut } from '../lib/auth'
 
 const project = computed(() => data.state?.project)
 const showScenarios = computed(() => ui.view === 'dashboard' || ui.view === 'loadlist')
+const initials = computed(() => (auth.user ?? '?').slice(0, 1).toUpperCase())
+
+async function logout() {
+  await signOut()
+  resetData()
+}
 </script>
 
 <template>
@@ -28,6 +35,10 @@ const showScenarios = computed(() => ui.view === 'dashboard' || ui.view === 'loa
     </div>
 
     <div class="topbar-actions">
+      <span class="user-chip" :title="`Signed in as ${auth.user ?? ''}`">
+        <span class="avatar">{{ initials }}</span>
+        <span>{{ auth.user }}</span>
+      </span>
       <button class="btn icon" title="Calculation settings" @click="ui.settingsOpen = true">
         ⚙
       </button>
@@ -35,6 +46,7 @@ const showScenarios = computed(() => ui.view === 'dashboard' || ui.view === 'loa
         ↓ CSV
       </a>
       <button class="btn primary" @click="ui.createOpen = true">+ New item</button>
+      <button class="btn icon" title="Sign out" @click="logout">⏻</button>
     </div>
   </header>
 </template>

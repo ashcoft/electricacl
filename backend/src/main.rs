@@ -12,6 +12,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 
 use electricacl::api::{self, AppState};
+use electricacl::auth::{Auth, CapConfig};
 use electricacl::store::Store;
 
 fn env_or(name: &str, fallback: &str) -> String {
@@ -63,6 +64,51 @@ async fn main() -> Result<()> {
 
     let data_dir = PathBuf::from(env_or("DATA_DIR", "./data"));
     let static_dir = PathBuf::from(env_or("STATIC_DIR", "./static"));
+    let auth_user = env_or("AUTH_USERNAME", "admin");
+
+    if env::args().any(|arg| arg == "--reset-password") {
+        let password = Auth::reset_password(&data_dir, &auth_user)?;
+        println!("New password for '{auth_user}': {password}");
+        return Ok(());
+    }
+
+    let cap_endpoint = env::var("CAP_API_ENDPOINT")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let cap_secret = env::var("CAP_SECRET").ok().filter(|v| !v.trim().is_empty());
+    let cap = match (cap_endpoint, cap_secret) {
+        (Some(endpoint), Some(secret)) => Some(CapConfig { endpoint, secret }),
+        (None, None) => None,
+        _ => {
+            return Err(anyhow::anyhow!(
+                "CAP_API_ENDPOINT and CAP_SECRET must be set together (or neither)"
+            ))
+        }
+    };
+    let cookie_secure = matches!(
+        env_or("COOKIE_SECURE", "false")
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes"
+    );
+
+    let auth_password = env::var("AUTH_PASSWORD").ok().filter(|v| !v.is_empty());
+    let (auth, generated_password) = Auth::load(
+        &data_dir,
+        &auth_user,
+        auth_password.as_deref(),
+        cap,
+        cookie_secure,
+    )?;
+    if let Some(password) = generated_password {
+        tracing::warn!("==============================================================");
+        tracing::warn!("  initial login: {auth_user} / {password}");
+        tracing::warn!("  change it with AUTH_PASSWORD or: electricacl --reset-password");
+        tracing::warn!("==============================================================");
+    }
+    if !auth.cap_required() {
+        tracing::info!("CAPTCHA disabled (set CAP_API_ENDPOINT and CAP_SECRET to enable Cap)");
+    }
 
     let store = Store::load(&data_dir)?;
     if let Err(error) = store.persist() {
@@ -76,6 +122,7 @@ async fn main() -> Result<()> {
 
     let state = Arc::new(AppState {
         store: RwLock::new(store),
+        auth,
     });
 
     let index = static_dir.join("index.html");
@@ -98,13 +145,16 @@ async fn main() -> Result<()> {
         .with_context(|| format!("binding {address}"))?;
     tracing::info!("listening on http://{address}");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-            tracing::info!("shutdown signal received");
-        })
-        .await
-        .context("server error")?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        let _ = tokio::signal::ctrl_c().await;
+        tracing::info!("shutdown signal received");
+    })
+    .await
+    .context("server error")?;
 
     Ok(())
 }

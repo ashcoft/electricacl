@@ -238,9 +238,9 @@ function reviewWarnings() {
               </tr>
               <tr>
                 <td class="strong">Total load demand</td>
-                <td class="num strong" style="color: var(--accent)">{{ fmt(summary.demand.kw) }}</td>
+                <td class="num strong" style="color: var(--brand-dark)">{{ fmt(summary.demand.kw) }}</td>
                 <td class="num">{{ fmt(summary.demand.kvar) }}</td>
-                <td class="num strong" style="color: var(--accent)">{{ fmt(summary.demand.kva) }}</td>
+                <td class="num strong" style="color: var(--brand-dark)">{{ fmt(summary.demand.kva) }}</td>
                 <td class="dim small">Peak × (1 + {{ fmt(contingency, 0) }} %)</td>
               </tr>
             </tbody>
@@ -394,7 +394,7 @@ function reviewWarnings() {
               "
               @click="setScenario(entry.scenario)"
             >
-              <span class="label" :style="{ color: entry.scenario === summary.scenario ? '#d9fbff' : undefined }">
+              <span class="label" :style="{ color: entry.scenario === summary.scenario ? 'var(--copper)' : undefined }">
                 {{ SCENARIOS.find((s) => s.key === entry.scenario)?.short }}
               </span>
               <div class="track">
@@ -404,8 +404,8 @@ function reviewWarnings() {
                     width: `${Math.max(1.5, (entry.demand.kw / maxDemand) * 100)}%`,
                     background:
                       entry.scenario === summary.scenario
-                        ? 'linear-gradient(90deg, #22d3ee, #67e8f9)'
-                        : 'linear-gradient(90deg, #1e3a48, #2b5265)',
+                        ? 'linear-gradient(90deg, var(--brand), var(--brand-2))'
+                        : 'linear-gradient(90deg, #e2e8f0, #cbd5e1)',
                   }"
                 />
               </div>

@@ -126,6 +126,18 @@ export function resetItems() {
   return mutate(() => api.resetItems(), 'Source data restored')
 }
 
+export function resetData() {
+  data.state = null
+  ui.loading = true
+  ui.loadError = ''
+  ui.drawerId = null
+  ui.createOpen = false
+  ui.settingsOpen = false
+  ui.view = 'dashboard'
+  ui.scenario = 'normal'
+  resetFilters()
+}
+
 export function setScenario(scenario: ScenarioKey) {
   ui.scenario = scenario
 }

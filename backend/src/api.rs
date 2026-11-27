@@ -1,8 +1,10 @@
 use std::fmt::Write as _;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::extract::{ConnectInfo, Path, Request, State};
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
@@ -10,19 +12,27 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::RwLock;
 
+use crate::auth::{self, Auth, AuthStatus, LoginError};
 use crate::calc::{self, ItemView, ScenarioSummary, StateView};
 use crate::models::{CalcSettings, LoadItem, MotorRef, ProjectMeta};
 use crate::store::Store;
 
 pub struct AppState {
     pub store: RwLock<Store>,
+    pub auth: Auth,
 }
+
+/// User name attached to authenticated requests.
+#[derive(Clone)]
+pub struct CurrentUser(pub String);
 
 type Shared = Arc<AppState>;
 
 pub enum ApiError {
     NotFound(String),
     BadRequest(String),
+    Unauthorized(String),
+    TooManyRequests(String),
     Internal(anyhow::Error),
 }
 
@@ -31,6 +41,8 @@ impl IntoResponse for ApiError {
         let (status, message) = match self {
             ApiError::NotFound(message) => (StatusCode::NOT_FOUND, message),
             ApiError::BadRequest(message) => (StatusCode::BAD_REQUEST, message),
+            ApiError::Unauthorized(message) => (StatusCode::UNAUTHORIZED, message),
+            ApiError::TooManyRequests(message) => (StatusCode::TOO_MANY_REQUESTS, message),
             ApiError::Internal(error) => {
                 tracing::error!(%error, "request failed");
                 (StatusCode::INTERNAL_SERVER_ERROR, error.to_string())
@@ -47,8 +59,13 @@ impl From<anyhow::Error> for ApiError {
 }
 
 pub fn router(state: Shared) -> Router {
-    Router::new()
+    let public = Router::new()
         .route("/api/health", get(health))
+        .route("/api/auth/config", get(auth_config))
+        .route("/api/auth/login", post(login))
+        .route("/api/auth/logout", post(logout));
+
+    let protected = Router::new()
         .route("/api/state", get(get_state))
         .route("/api/summaries", get(get_summaries))
         .route("/api/motor-table", get(get_motor_table))
@@ -58,7 +75,86 @@ pub fn router(state: Shared) -> Router {
         .route("/api/load-items/{id}", put(update_item).delete(delete_item))
         .route("/api/load-items/{id}/duplicate", post(duplicate_item))
         .route("/api/export/csv", get(export_csv))
-        .with_state(state)
+        .route_layer(middleware::from_fn_with_state(state.clone(), require_auth));
+
+    public.merge(protected).with_state(state)
+}
+
+fn session_user(state: &AppState, headers: &HeaderMap) -> Option<String> {
+    let header = headers
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok());
+    auth::session_from_cookie_header(header).and_then(|token| state.auth.verify_token(&token))
+}
+
+async fn require_auth(State(state): State<Shared>, mut request: Request, next: Next) -> Response {
+    match session_user(&state, request.headers()) {
+        Some(user) => {
+            request.extensions_mut().insert(CurrentUser(user));
+            next.run(request).await
+        }
+        None => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({ "error": "authentication required" })),
+        )
+            .into_response(),
+    }
+}
+
+async fn auth_config(State(state): State<Shared>, headers: HeaderMap) -> Json<AuthStatus> {
+    let user = session_user(&state, &headers);
+    Json(state.auth.status(user.as_deref()))
+}
+
+#[derive(Deserialize)]
+struct LoginBody {
+    username: String,
+    password: String,
+    #[serde(default)]
+    cap_token: Option<String>,
+}
+
+async fn login(
+    State(state): State<Shared>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    Json(body): Json<LoginBody>,
+) -> Result<Response, ApiError> {
+    let ip = peer.ip();
+    match state
+        .auth
+        .login(
+            ip,
+            &body.username,
+            &body.password,
+            body.cap_token.as_deref(),
+        )
+        .await
+    {
+        Ok(token) => {
+            let cookie = state.auth.session_cookie(&token);
+            Ok((
+                [(header::SET_COOKIE, cookie)],
+                Json(json!({ "user": body.username.trim() })),
+            )
+                .into_response())
+        }
+        Err(LoginError::RateLimited) => Err(ApiError::TooManyRequests(
+            "Too many failed attempts, try again in a few minutes".into(),
+        )),
+        Err(LoginError::BadCredentials) => Err(ApiError::Unauthorized(
+            "Invalid login ID or password".into(),
+        )),
+        Err(LoginError::Captcha(message)) => Err(ApiError::BadRequest(message)),
+        Err(LoginError::Internal(error)) => Err(ApiError::Internal(error)),
+    }
+}
+
+async fn logout(State(state): State<Shared>) -> Response {
+    (
+        [(header::SET_COOKIE, state.auth.expired_cookie())],
+        Json(json!({ "ok": true })),
+    )
+        .into_response()
 }
 
 fn app_version() -> String {

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, watch } from 'vue'
 import DashboardView from './views/DashboardView.vue'
 import LoadListView from './views/LoadListView.vue'
+import LoginView from './views/LoginView.vue'
 import MethodView from './views/MethodView.vue'
 import MotorTableView from './views/MotorTableView.vue'
 import ItemDrawer from './components/ItemDrawer.vue'
@@ -10,12 +11,14 @@ import NewItemDialog from './components/NewItemDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import Toasts from './components/Toasts.vue'
 import TopBar from './components/TopBar.vue'
-import { load, ui } from './store'
+import { auth, refreshAuth } from './lib/auth'
+import { load, resetData, ui } from './store'
 
 function onKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null
   const typing =
-    target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')
+    target &&
+    (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')
 
   if (event.key === 'Escape') {
     if (ui.createOpen) ui.createOpen = false
@@ -23,7 +26,7 @@ function onKeydown(event: KeyboardEvent) {
     else if (ui.drawerId) ui.drawerId = null
     return
   }
-  if (typing) return
+  if (typing || !auth.authenticated) return
   if (event.key === '/') {
     event.preventDefault()
     ui.view = 'loadlist'
@@ -38,15 +41,38 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-onMounted(() => {
-  load()
+onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
+  await refreshAuth()
+  if (auth.authenticated) load()
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+
+watch(
+  () => auth.authenticated,
+  (authenticated) => {
+    if (authenticated) load()
+    else resetData()
+  },
+)
 </script>
 
 <template>
-  <div class="app">
+  <div
+    v-if="!auth.ready"
+    style="min-height: 100vh; display: grid; place-items: center; background: var(--bg)"
+  >
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 14px">
+      <div class="brand-mark" style="width: 44px; height: 44px; border-radius: 12px; font-size: 20px">
+        ⚡
+      </div>
+      <div class="small muted">Loading calculation workspace…</div>
+    </div>
+  </div>
+
+  <LoginView v-else-if="!auth.authenticated" />
+
+  <div v-else class="app">
     <NavRail />
     <div class="main">
       <TopBar />

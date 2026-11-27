@@ -83,3 +83,29 @@ Releases are automated with semantic-release (`.releaserc.json`,
 - `npm ci` at the repository root only installs the release tooling; the app builds from
   `backend/` and `frontend/`.
 - Local check without publishing: `npm run release:dry` (needs full history and `GITHUB_TOKEN`).
+
+## Authentication
+
+- `backend/src/auth.rs` owns everything: Argon2 password hashes, HMAC-signed session cookies
+  (`eacl_session`, 12 h, HttpOnly, SameSite=Lax), per-IP lockout after 5 failures, and Cap
+  verification via `POST <CAP_API_ENDPOINT>/siteverify` with the site secret.
+- Credentials live in `DATA_DIR/credentials.json` (0600) as `{username, password_hash,
+  session_secret}`. The password itself is never stored: it comes from `AUTH_PASSWORD` or is
+  generated once on first boot and logged. `electricacl --reset-password` regenerates it.
+- `api::router` splits public routes (`/api/health`, `/api/auth/*`) from protected ones, which go
+  through `require_auth` middleware. The SPA shell is intentionally public so the login page loads.
+- `CAP_API_ENDPOINT` and `CAP_SECRET` must be set together or not at all; the process refuses to
+  start otherwise. Without them the challenge is skipped and the login page says so.
+- The frontend bundles `cap-widget` (lazy chunk) so the login page works on an air-gapped network;
+  `vite.config.ts` declares `cap-*` as custom elements. It only loads when `cap_required` is true.
+- Session state is in `frontend/src/lib/auth.ts`; `api.onUnauthorized` clears it when the API returns
+  401, so an expired cookie drops the user back to the login screen.
+- HTTP-level behaviour is covered by `backend/tests/auth_http.rs` (401 without cookie, login sets a
+  cookie, wrong password rejected, logout clears it).
+
+## UI theme
+
+The interface follows the TUAH/TeMS design language: Inter, white surfaces on `#f4f6f9`, copper
+headings (`--copper`), orange gradient primary (`--brand` → `--brand-2`), 10 px radii, 48 px login
+controls, split-screen login with a copper/orange branding panel. Keep new components on those
+tokens (`frontend/src/styles.css`) rather than adding a UI framework.

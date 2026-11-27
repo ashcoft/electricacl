@@ -5,6 +5,8 @@ import type {
   CableReference,
   CableState,
   CalcSettings,
+  CathodicItem,
+  CathodicState,
   LoadItem,
 } from '../types'
 
@@ -105,6 +107,31 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ reference }),
     }),
+
+  getCathodicState: () => request<CathodicState>('/api/cathodic/state'),
+
+  createCathodicItem: (item: Partial<CathodicItem>) =>
+    request<CathodicItem>('/api/cathodic/items', {
+      method: 'POST',
+      body: JSON.stringify(item),
+    }),
+
+  updateCathodicItem: (item: CathodicItem) =>
+    request<CathodicItem>(`/api/cathodic/items/${item.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(item),
+    }),
+
+  deleteCathodicItem: (id: string) =>
+    request<void>(`/api/cathodic/items/${id}`, { method: 'DELETE' }),
+
+  duplicateCathodicItem: (id: string) =>
+    request<CathodicItem>(`/api/cathodic/items/${id}/duplicate`, { method: 'POST' }),
+
+  resetCathodicItems: () =>
+    request<{ restored: number }>('/api/cathodic/items/reset', { method: 'POST' }),
+
+  cathodicCsvUrl: '/api/export/cathodic.csv',
 
   cableCsvUrl: '/api/export/cable.csv',
 

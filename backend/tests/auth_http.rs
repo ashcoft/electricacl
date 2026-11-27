@@ -9,6 +9,7 @@ use axum::Router;
 use electricacl::api::{self, AppState, CapProxy};
 use electricacl::auth::Auth;
 use electricacl::cable_store::CableStore;
+use electricacl::cathodic_store::CathodicStore;
 use electricacl::store::Store;
 use http_body_util::BodyExt;
 use tokio::sync::RwLock;
@@ -33,6 +34,7 @@ async fn app() -> Router {
     let state = Arc::new(AppState {
         store: RwLock::new(store),
         cable: RwLock::new(CableStore::load(&dir).unwrap()),
+        cathodic: RwLock::new(CathodicStore::load(&dir).unwrap()),
         auth,
         cap_proxy: None,
     });
@@ -52,6 +54,7 @@ async fn app_with_cap_proxy() -> Router {
     let state = Arc::new(AppState {
         store: RwLock::new(store),
         cable: RwLock::new(CableStore::load(&dir).unwrap()),
+        cathodic: RwLock::new(CathodicStore::load(&dir).unwrap()),
         auth,
         cap_proxy: Some(CapProxy {
             upstream: "http://127.0.0.1:9".into(),

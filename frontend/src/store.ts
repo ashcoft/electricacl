@@ -7,13 +7,15 @@ import type {
   CableRow,
   CableState,
   CalcSettings,
+  CathodicItem,
+  CathodicState,
   ItemView,
   LoadItem,
   ScenarioKey,
   ScenarioSummary,
 } from './types'
 
-export type ViewKey = 'dashboard' | 'loadlist' | 'cable' | 'motors' | 'method'
+export type ViewKey = 'dashboard' | 'loadlist' | 'cable' | 'cathodic' | 'motors' | 'method'
 
 export interface Toast {
   id: number
@@ -42,6 +44,7 @@ export const ui = reactive({
   toasts: [] as Toast[],
   drawerId: null as string | null,
   cableDrawerId: null as string | null,
+  cathodicDrawerId: null as string | null,
   createOpen: false,
   cableCreateOpen: false,
   settingsOpen: false,
@@ -61,6 +64,7 @@ export const ui = reactive({
 export const data = reactive({
   state: null as AppState | null,
   cable: null as CableState | null,
+  cathodic: null as CathodicState | null,
 })
 
 export const currentSummary = computed<ScenarioSummary | null>(() => {
@@ -71,6 +75,11 @@ export const currentSummary = computed<ScenarioSummary | null>(() => {
 export const cableDrawerItem = computed<CableRow | null>(() => {
   if (!data.cable || !ui.cableDrawerId) return null
   return data.cable.circuits.find((row) => row.id === ui.cableDrawerId) ?? null
+})
+
+export const cathodicDrawerItem = computed<CathodicState['items'][number] | null>(() => {
+  if (!data.cathodic || !ui.cathodicDrawerId) return null
+  return data.cathodic.items.find((row) => row.id === ui.cathodicDrawerId) ?? null
 })
 
 export const drawerItem = computed<ItemView | null>(() => {
@@ -91,9 +100,14 @@ export async function load() {
   ui.loading = true
   ui.loadError = ''
   try {
-    const [state, cable] = await Promise.all([api.getState(), api.getCableState()])
+    const [state, cable, cathodic] = await Promise.all([
+      api.getState(),
+      api.getCableState(),
+      api.getCathodicState(),
+    ])
     data.state = state
     data.cable = cable
+    data.cathodic = cathodic
   } catch (error) {
     ui.loadError = error instanceof Error ? error.message : String(error)
   } finally {
@@ -140,6 +154,41 @@ export function saveCableReference(reference: CableReference[]) {
   return mutateCable(() => api.saveCableReference(reference), 'Cable reference table saved')
 }
 
+async function mutateCathodic<T>(action: () => Promise<T>, successMessage?: string) {
+  ui.busy = true
+  try {
+    const result = await action()
+    data.cathodic = await api.getCathodicState()
+    if (successMessage) toast('success', successMessage)
+    return result
+  } catch (error) {
+    toast('error', error instanceof Error ? error.message : String(error))
+    return null
+  } finally {
+    ui.busy = false
+  }
+}
+
+export function saveCathodicItem(item: CathodicItem) {
+  return mutateCathodic(() => api.updateCathodicItem(item), 'Cathodic item saved')
+}
+
+export function createCathodicItem(partial: Partial<CathodicItem>) {
+  return mutateCathodic(() => api.createCathodicItem(partial), 'Cathodic item added')
+}
+
+export function deleteCathodicItem(id: string) {
+  return mutateCathodic(() => api.deleteCathodicItem(id), 'Cathodic item deleted')
+}
+
+export function duplicateCathodicItem(id: string) {
+  return mutateCathodic(() => api.duplicateCathodicItem(id), 'Cathodic item duplicated')
+}
+
+export function resetCathodicItems() {
+  return mutateCathodic(() => api.resetCathodicItems(), 'Source cathodic data restored')
+}
+
 async function mutate<T>(action: () => Promise<T>, successMessage?: string): Promise<T | null> {
   ui.busy = true
   try {
@@ -182,10 +231,12 @@ export function resetItems() {
 export function resetData() {
   data.state = null
   data.cable = null
+  data.cathodic = null
   ui.loading = true
   ui.loadError = ''
   ui.drawerId = null
   ui.cableDrawerId = null
+  ui.cathodicDrawerId = null
   ui.createOpen = false
   ui.cableCreateOpen = false
   ui.settingsOpen = false

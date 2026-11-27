@@ -18,6 +18,8 @@ use crate::auth::{self, Auth, AuthStatus, LoginError};
 use crate::cable::{CableCircuit, CableReference, CableStateView};
 use crate::cable_store::CableStore;
 use crate::calc::{self, ItemView, ScenarioSummary, StateView};
+use crate::cathodic::{CathodicItem, CathodicStateView};
+use crate::cathodic_store::CathodicStore;
 use crate::models::{CalcSettings, LoadItem, MotorRef, ProjectMeta, Scenario};
 use crate::store::Store;
 
@@ -32,6 +34,7 @@ pub struct CapProxy {
 pub struct AppState {
     pub store: RwLock<Store>,
     pub cable: RwLock<CableStore>,
+    pub cathodic: RwLock<CathodicStore>,
     pub auth: Auth,
     pub cap_proxy: Option<CapProxy>,
 }
@@ -104,6 +107,18 @@ pub fn router(state: Shared) -> Router {
             post(duplicate_cable_circuit),
         )
         .route("/api/export/cable.csv", get(export_cable_csv))
+        .route("/api/cathodic/state", get(get_cathodic_state))
+        .route("/api/cathodic/items", post(create_cathodic_item))
+        .route("/api/cathodic/items/reset", post(reset_cathodic_items))
+        .route(
+            "/api/cathodic/items/{id}",
+            put(update_cathodic_item).delete(delete_cathodic_item),
+        )
+        .route(
+            "/api/cathodic/items/{id}/duplicate",
+            post(duplicate_cathodic_item),
+        )
+        .route("/api/export/cathodic.csv", get(export_cathodic_csv))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     public.merge(protected).with_state(state)
@@ -452,6 +467,177 @@ chain_length_m,check_ampacity,check_protection,check_voltage_drop,check_max_leng
             (
                 header::CONTENT_DISPOSITION,
                 "attachment; filename=\"cable-sizing.csv\"".to_string(),
+            ),
+        ],
+        out,
+    )
+        .into_response())
+}
+
+async fn get_cathodic_state(State(state): State<Shared>) -> Json<CathodicStateView> {
+    let cathodic = state.cathodic.read().await;
+    Json(cathodic.state())
+}
+
+async fn create_cathodic_item(
+    State(state): State<Shared>,
+    Json(item): Json<CathodicItem>,
+) -> Result<(StatusCode, Json<CathodicItem>), ApiError> {
+    let mut cathodic = state.cathodic.write().await;
+    let created = cathodic.create(item)?;
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+async fn update_cathodic_item(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+    Json(item): Json<CathodicItem>,
+) -> Result<Json<CathodicItem>, ApiError> {
+    let mut cathodic = state.cathodic.write().await;
+    match cathodic.update(&id, item)? {
+        Some(updated) => Ok(Json(updated)),
+        None => Err(ApiError::NotFound(format!("cathodic item {id} not found"))),
+    }
+}
+
+async fn delete_cathodic_item(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let mut cathodic = state.cathodic.write().await;
+    if cathodic.delete(&id)? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::NotFound(format!("cathodic item {id} not found")))
+    }
+}
+
+async fn duplicate_cathodic_item(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+) -> Result<(StatusCode, Json<CathodicItem>), ApiError> {
+    let mut cathodic = state.cathodic.write().await;
+    match cathodic.duplicate(&id)? {
+        Some(copy) => Ok((StatusCode::CREATED, Json(copy))),
+        None => Err(ApiError::NotFound(format!("cathodic item {id} not found"))),
+    }
+}
+
+async fn reset_cathodic_items(
+    State(state): State<Shared>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut cathodic = state.cathodic.write().await;
+    let count = cathodic.reset()?;
+    Ok(Json(json!({ "restored": count })))
+}
+
+async fn export_cathodic_csv(State(state): State<Shared>) -> Result<Response, ApiError> {
+    let cathodic = state.cathodic.read().await;
+    let view = cathodic.state();
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "# {} - {} - cathodic protection",
+        csv_escape(&view.project.name),
+        csv_escape(&view.project.document)
+    );
+    let _ = writeln!(
+        out,
+        "tag,description,source_sheet,structure,orientation,surface,method,design_life_years,\
+coating_breakdown,apply_coating_breakdown,current_density_a_m2,temp_coefficient,design_temp_c,\
+operating_temp_c,capacity_temp_c,capacity_ah_kg,utilization,safety_factor,diameter_m,length_m,\
+width_m,liquid_height_m,discrepancy_pct,current_density_used_a_m2,capacity_at_temp_ah_kg,\
+wetted_area_m2,exposed_area_m2,protection_current_a,anode_type,anode_weight_kg,anode_output_a,\
+anode_mass_kg,anodes_by_mass,anodes_by_current,anodes_required,anodes_selected,life_years,\
+rectifier_current_a,rectifier_voltage_v,rectifier_kva,check_capacity,check_current_density,\
+check_anode_count,check_design_life,acceptable,remark"
+    );
+    for row in &view.items {
+        let item = &row.item;
+        let derived = &row.derived;
+        let values = [
+            csv_escape(&optional(&item.tag)),
+            csv_escape(&optional(&item.description)),
+            csv_escape(&optional(&item.source_sheet)),
+            csv_escape(item.structure.key()),
+            csv_escape(item.orientation.key()),
+            csv_escape(item.surface.key()),
+            csv_escape(item.method.key()),
+            format!("{:.2}", item.design_life_years),
+            format!("{:.4}", item.coating_breakdown),
+            if item.apply_coating_breakdown {
+                "TRUE".to_string()
+            } else {
+                "FALSE".to_string()
+            },
+            format!("{:.5}", item.current_density_a_m2),
+            format!("{:.5}", item.temp_coefficient),
+            format!("{:.1}", item.design_temp_c),
+            format!("{:.1}", item.operating_temp_c),
+            format!("{:.1}", item.capacity_temp()),
+            format!("{:.1}", item.capacity_ah_kg),
+            format!("{:.3}", item.utilization),
+            format!("{:.3}", item.safety_factor),
+            format!("{:.3}", item.diameter_m),
+            format!("{:.3}", item.length_m),
+            format!("{:.3}", item.width_m),
+            format!("{:.3}", item.liquid_height_m),
+            format!("{:.2}", item.discrepancy_pct),
+            format!("{:.5}", derived.current_density_a_m2),
+            format!("{:.3}", derived.capacity_at_temp_ah_kg),
+            format!("{:.3}", derived.wetted_area_m2),
+            format!("{:.3}", derived.exposed_area_m2),
+            format!("{:.4}", derived.protection_current_a),
+            csv_escape(&optional(&item.anode_type)),
+            format!("{:.2}", item.anode_weight_kg),
+            item.anode_output_a
+                .map(|v| format!("{v:.4}"))
+                .unwrap_or_default(),
+            derived
+                .anode_mass_kg
+                .map(|v| format!("{v:.2}"))
+                .unwrap_or_default(),
+            derived
+                .anodes_by_mass
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            derived
+                .anodes_by_current
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            derived.anodes_required.to_string(),
+            derived.anodes_selected.to_string(),
+            derived
+                .life_years
+                .map(|v| format!("{v:.2}"))
+                .unwrap_or_default(),
+            derived
+                .rectifier_current_a
+                .map(|v| format!("{v:.2}"))
+                .unwrap_or_default(),
+            derived
+                .rectifier_voltage_v
+                .map(|v| format!("{v:.2}"))
+                .unwrap_or_default(),
+            derived
+                .rectifier_kva
+                .map(|v| format!("{v:.3}"))
+                .unwrap_or_default(),
+            verdict(derived.checks.capacity),
+            verdict(derived.checks.current_density),
+            verdict(derived.checks.anode_count),
+            verdict(derived.checks.design_life),
+            verdict(derived.acceptable),
+            csv_escape(&optional(&item.remark)),
+        ];
+        let _ = writeln!(out, "{}", values.join(","));
+    }
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"cathodic-protection.csv\"".to_string(),
             ),
         ],
         out,

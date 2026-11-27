@@ -2,6 +2,8 @@
 import { onBeforeUnmount, onMounted, watch } from 'vue'
 import CableSizingView from './views/CableSizingView.vue'
 import CableDrawer from './components/CableDrawer.vue'
+import CathodicView from './views/CathodicView.vue'
+import CathodicDrawer from './components/CathodicDrawer.vue'
 import DashboardView from './views/DashboardView.vue'
 import LoadListView from './views/LoadListView.vue'
 import LoginView from './views/LoginView.vue'
@@ -28,6 +30,7 @@ function onKeydown(event: KeyboardEvent) {
     else if (ui.settingsOpen) ui.settingsOpen = false
     else if (ui.drawerId) ui.drawerId = null
     else if (ui.cableDrawerId) ui.cableDrawerId = null
+    else if (ui.cathodicDrawerId) ui.cathodicDrawerId = null
     return
   }
   if (typing || !auth.authenticated) return
@@ -101,6 +104,7 @@ watch(
           <DashboardView v-if="ui.view === 'dashboard'" />
           <LoadListView v-else-if="ui.view === 'loadlist'" />
           <CableSizingView v-else-if="ui.view === 'cable'" />
+          <CathodicView v-else-if="ui.view === 'cathodic'" />
           <MotorTableView v-else-if="ui.view === 'motors'" />
           <MethodView v-else />
         </template>
@@ -109,6 +113,7 @@ watch(
 
     <ItemDrawer v-if="ui.drawerId" />
     <CableDrawer v-if="ui.cableDrawerId" />
+    <CathodicDrawer v-if="ui.cathodicDrawerId" />
     <SettingsDialog v-if="ui.settingsOpen" />
     <NewItemDialog v-if="ui.createOpen" />
     <Toasts />

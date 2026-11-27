@@ -1,4 +1,4 @@
-.PHONY: dev build test fmt lint docker run clean seed
+.PHONY: dev build test fmt lint docker run clean seed seed-cathodic
 
 # Local development: Rust API on :8080, Vite dev server on :5173 with /api proxy.
 dev:
@@ -35,6 +35,9 @@ image:
 # Re-extract the seed data from the source workbook (needs python + openpyxl).
 seed:
 	python tools/extract_seed.py
+
+seed-cathodic:
+	python tools/extract_cathodic_seed.py
 
 clean:
 	rm -rf frontend/dist backend/target

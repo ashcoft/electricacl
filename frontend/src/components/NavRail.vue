@@ -16,10 +16,7 @@ const views: {
   { key: 'method', label: 'Method & basis', icon: 'formula' },
 ]
 
-const upcoming = [
-  { idx: '03', label: 'Cathodic protection' },
-  { idx: '04', label: 'Transformer sizing' },
-]
+const upcoming = [{ idx: '04', label: 'Transformer sizing' }]
 </script>
 
 <template>
@@ -53,6 +50,14 @@ const upcoming = [
       >
         <span class="idx">02</span>
         <span>Cable sizing</span>
+      </button>
+      <button
+        class="nav-item"
+        :class="{ active: ui.view === 'cathodic' }"
+        @click="ui.view = 'cathodic'"
+      >
+        <span class="idx">03</span>
+        <span>Cathodic protection</span>
       </button>
       <button
         v-for="entry in upcoming"

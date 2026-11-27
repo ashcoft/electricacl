@@ -33,7 +33,7 @@ async fn app() -> Router {
         store: RwLock::new(store),
         auth,
     });
-    api::router(state)
+    api::router(state).layer(axum::middleware::from_fn(api::security_headers))
 }
 
 fn request(method: &str, uri: &str) -> axum::http::request::Builder {
@@ -73,6 +73,20 @@ async fn health_is_public_and_state_is_not() {
         .await
         .unwrap();
     assert_eq!(export.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn responses_carry_security_headers() {
+    let app = app().await;
+    let response = app
+        .oneshot(request("GET", "/api/health").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+    assert_eq!(response.headers()["x-frame-options"], "DENY");
+    assert_eq!(response.headers()["referrer-policy"], "no-referrer");
+    assert_eq!(response.headers()["cache-control"], "no-store");
 }
 
 #[tokio::test]

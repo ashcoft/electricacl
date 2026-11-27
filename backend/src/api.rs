@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::extract::{ConnectInfo, Path, Request, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
@@ -78,6 +78,32 @@ pub fn router(state: Shared) -> Router {
         .route_layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     public.merge(protected).with_state(state)
+}
+
+/// Baseline hardening applied to every response: no MIME sniffing, no framing
+/// (clickjacking protection for the sign-in form), no referrer leakage, and
+/// `no-store` on the API so authenticated payloads are never cached.
+pub async fn security_headers(request: Request, next: Next) -> Response {
+    let is_api = request.uri().path().starts_with("/api/");
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+    );
+    if is_api {
+        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    }
+    response
 }
 
 fn session_user(state: &AppState, headers: &HeaderMap) -> Option<String> {

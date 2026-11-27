@@ -105,7 +105,8 @@ Releases are automated with semantic-release (`.releaserc.json`,
 
 ## UI theme
 
-The interface follows the TUAH/TeMS design language: Inter, white surfaces on `#f4f6f9`, copper
-headings (`--copper`), orange gradient primary (`--brand` → `--brand-2`), 10 px radii, 48 px login
-controls, split-screen login with a copper/orange branding panel. Keep new components on those
-tokens (`frontend/src/styles.css`) rather than adding a UI framework.
+The interface uses a light copper/orange engineering design language: Inter, white surfaces on
+`#f4f6f9`, copper headings (`--copper`), orange gradient primary (`--brand` → `--brand-2`), 10 px
+radii, 48 px login controls, split-screen login with a copper/orange branding panel. Keep new
+components on those tokens (`frontend/src/styles.css`) rather than adding a UI framework. The app is
+branded as "Electrical Calculation Suite" — do not add third-party or customer branding to it.

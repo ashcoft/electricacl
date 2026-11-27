@@ -136,6 +136,7 @@ async fn main() -> Result<()> {
 
     let app = api::router(state)
         .fallback_service(spa)
+        .layer(axum::middleware::from_fn(api::security_headers))
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http());
 

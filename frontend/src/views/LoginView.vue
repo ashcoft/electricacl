@@ -63,11 +63,11 @@ function reset() {
   <div class="login-wrapper">
     <section class="branding-panel">
       <div class="branding-content">
-        <div class="eyebrow">TUAH Engineering</div>
-        <h1>Empowering Engineering Excellence</h1>
+        <div class="eyebrow">Electrical Calculation Suite</div>
+        <h1>Engineering numbers you can defend</h1>
         <p>
-          A single workspace for electrical calculations — load list, cable sizing and cathodic
-          protection, with every number traceable back to its source.
+          Load list, cable sizing and cathodic protection in one workspace, with every value
+          traceable back to its source and its formula shown next to it.
         </p>
         <div class="branding-points">
           <span>Load list</span>
@@ -82,7 +82,7 @@ function reset() {
       <div class="login-brand">
         <div class="brand-mark">⚡</div>
         <div>
-          <div class="login-title">TUAH Enterprise Management System</div>
+          <div class="login-title">Electrical Calculation Suite</div>
           <div class="login-subtitle">Electrical Load List Calculation</div>
         </div>
       </div>

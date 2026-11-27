@@ -1,0 +1,12 @@
+.git
+.gitignore
+.github
+**/node_modules
+**/target
+frontend/dist
+data
+*.xlsx
+*.xls
+!backend/data/seed.json
+README.md
+AGENTS.md

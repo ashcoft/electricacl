@@ -2,6 +2,8 @@
 
 pub mod api;
 pub mod auth;
+pub mod cable;
+pub mod cable_store;
 pub mod calc;
 pub mod models;
 pub mod report;

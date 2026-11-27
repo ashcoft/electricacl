@@ -15,6 +15,8 @@ use serde_json::json;
 use tokio::sync::RwLock;
 
 use crate::auth::{self, Auth, AuthStatus, LoginError};
+use crate::cable::{CableCircuit, CableReference, CableStateView};
+use crate::cable_store::CableStore;
 use crate::calc::{self, ItemView, ScenarioSummary, StateView};
 use crate::models::{CalcSettings, LoadItem, MotorRef, ProjectMeta, Scenario};
 use crate::store::Store;
@@ -29,6 +31,7 @@ pub struct CapProxy {
 
 pub struct AppState {
     pub store: RwLock<Store>,
+    pub cable: RwLock<CableStore>,
     pub auth: Auth,
     pub cap_proxy: Option<CapProxy>,
 }
@@ -88,6 +91,19 @@ pub fn router(state: Shared) -> Router {
         .route("/api/load-items/{id}/duplicate", post(duplicate_item))
         .route("/api/export/csv", get(export_csv))
         .route("/api/export/pdf", get(export_pdf))
+        .route("/api/cable/state", get(get_cable_state))
+        .route("/api/cable/reference", put(put_cable_reference))
+        .route("/api/cable/circuits", post(create_cable_circuit))
+        .route("/api/cable/circuits/reset", post(reset_cable_circuits))
+        .route(
+            "/api/cable/circuits/{id}",
+            put(update_cable_circuit).delete(delete_cable_circuit),
+        )
+        .route(
+            "/api/cable/circuits/{id}/duplicate",
+            post(duplicate_cable_circuit),
+        )
+        .route("/api/export/cable.csv", get(export_cable_csv))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
     public.merge(protected).with_state(state)
@@ -281,6 +297,174 @@ async fn health() -> Json<serde_json::Value> {
         "service": "electricacl",
         "version": app_version(),
     }))
+}
+
+async fn get_cable_state(State(state): State<Shared>) -> Json<CableStateView> {
+    let cable = state.cable.read().await;
+    Json(cable.state())
+}
+
+async fn create_cable_circuit(
+    State(state): State<Shared>,
+    Json(circuit): Json<CableCircuit>,
+) -> Result<(StatusCode, Json<CableCircuit>), ApiError> {
+    let mut cable = state.cable.write().await;
+    let created = cable.create(circuit)?;
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+async fn update_cable_circuit(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+    Json(circuit): Json<CableCircuit>,
+) -> Result<Json<CableCircuit>, ApiError> {
+    let mut cable = state.cable.write().await;
+    match cable.update(&id, circuit)? {
+        Some(updated) => Ok(Json(updated)),
+        None => Err(ApiError::NotFound(format!("cable circuit {id} not found"))),
+    }
+}
+
+async fn delete_cable_circuit(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let mut cable = state.cable.write().await;
+    if cable.delete(&id)? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::NotFound(format!("cable circuit {id} not found")))
+    }
+}
+
+async fn duplicate_cable_circuit(
+    State(state): State<Shared>,
+    Path(id): Path<String>,
+) -> Result<(StatusCode, Json<CableCircuit>), ApiError> {
+    let mut cable = state.cable.write().await;
+    match cable.duplicate(&id)? {
+        Some(copy) => Ok((StatusCode::CREATED, Json(copy))),
+        None => Err(ApiError::NotFound(format!("cable circuit {id} not found"))),
+    }
+}
+
+#[derive(Deserialize)]
+struct ReferenceBody {
+    reference: Vec<CableReference>,
+}
+
+async fn put_cable_reference(
+    State(state): State<Shared>,
+    Json(body): Json<ReferenceBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut cable = state.cable.write().await;
+    let count = cable.replace_reference(body.reference)?;
+    Ok(Json(json!({ "reference_rows": count })))
+}
+
+async fn reset_cable_circuits(
+    State(state): State<Shared>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut cable = state.cable.write().await;
+    let count = cable.reset()?;
+    Ok(Json(json!({ "restored": count })))
+}
+
+async fn export_cable_csv(State(state): State<Shared>) -> Result<Response, ApiError> {
+    let cable = state.cable.read().await;
+    let view = cable.state();
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "# {} - {} - cable sizing",
+        csv_escape(&view.project.name),
+        csv_escape(&view.project.document)
+    );
+    let _ = writeln!(
+        out,
+        "si_no,tag,group,from,to,feeder_load,voltage_v,phases,power_factor,load_kw,length_m,runs,\
+cores,size_mm2,ampacity_a,grouping_factor,temperature_factor,derating,iz_a,iflc_a,runs_required,\
+protection_rating_a,resistance_ohm_km,reactance_ohm_km,vd_v,vd_pct,vd_last_pct,max_length_m,\
+chain_length_m,check_ampacity,check_protection,check_voltage_drop,check_max_length,acceptable,remark"
+    );
+    for row in &view.circuits {
+        let circuit = &row.circuit;
+        let derived = &row.derived;
+        let reference = view.reference.iter().find(|entry| {
+            entry.cores == circuit.cores && (entry.size_mm2 - circuit.size_mm2).abs() < 1e-9
+        });
+        let checks = derived.checks;
+        let values = [
+            circuit.si_no.map(|n| n.to_string()).unwrap_or_default(),
+            csv_escape(&optional(&circuit.tag)),
+            csv_escape(&optional(&circuit.group)),
+            csv_escape(&optional(&circuit.from_tag)),
+            csv_escape(&optional(&circuit.to_tag)),
+            csv_escape(&optional(&circuit.feeder_load)),
+            format!("{:.0}", circuit.voltage_v),
+            csv_escape(circuit.phases.key()),
+            format!("{:.3}", circuit.power_factor),
+            format!("{:.3}", circuit.load_kw),
+            format!("{:.1}", circuit.length_m),
+            circuit.runs_selected.to_string(),
+            csv_escape(circuit.cores.key()),
+            format!("{:.2}", circuit.size_mm2),
+            format!("{:.1}", derived.ampacity_a),
+            format!("{:.3}", circuit.grouping_factor),
+            format!("{:.3}", circuit.temperature_factor),
+            format!("{:.4}", derived.derating),
+            format!("{:.2}", derived.iz_a),
+            format!("{:.3}", derived.iflc_a),
+            format!("{:.4}", derived.runs_required),
+            format!("{:.1}", circuit.protection_rating_a),
+            reference
+                .map(|r| format!("{:.4}", r.resistance_ohm_km))
+                .unwrap_or_default(),
+            reference
+                .map(|r| format!("{:.4}", r.reactance_ohm_km))
+                .unwrap_or_default(),
+            format!("{:.4}", derived.vd_v),
+            format!("{:.5}", derived.vd_pct),
+            derived
+                .vd_last_pct
+                .map(|v| format!("{v:.5}"))
+                .unwrap_or_default(),
+            derived
+                .max_length_m
+                .map(|v| format!("{v:.1}"))
+                .unwrap_or_default(),
+            derived
+                .chain_length_m
+                .map(|v| format!("{v:.1}"))
+                .unwrap_or_default(),
+            verdict(checks.ampacity),
+            verdict(checks.protection),
+            checks.voltage_drop.map(verdict).unwrap_or_default(),
+            checks.max_length.map(verdict).unwrap_or_default(),
+            verdict(derived.acceptable),
+            csv_escape(&optional(&circuit.remark)),
+        ];
+        let _ = writeln!(out, "{}", values.join(","));
+    }
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"cable-sizing.csv\"".to_string(),
+            ),
+        ],
+        out,
+    )
+        .into_response())
+}
+
+fn verdict(value: bool) -> String {
+    if value {
+        "ACCEPTABLE".to_string()
+    } else {
+        "NOT-ACCEPTABLE".to_string()
+    }
 }
 
 async fn get_state(State(state): State<Shared>) -> Json<StateView> {

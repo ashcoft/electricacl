@@ -198,3 +198,109 @@ export function dutyLabel(key: DutyKey | null): string {
   if (!key) return 'Unassigned'
   return DUTIES.find((entry) => entry.key === key)?.label ?? key
 }
+
+/* ------------------------------------------------------------ cable sizing */
+export type Phases = 'single' | 'three'
+export type CableCores = 'two_core_earth' | 'three_core_earth' | 'four_core_earth'
+
+export const CABLE_CORES: { key: CableCores; label: string }[] = [
+  { key: 'two_core_earth', label: '2C+E' },
+  { key: 'three_core_earth', label: '3C+E' },
+  { key: 'four_core_earth', label: '4C+E' },
+]
+
+export const PHASES: { key: Phases; label: string }[] = [
+  { key: 'single', label: '1-phase' },
+  { key: 'three', label: '3-phase' },
+]
+
+export interface CableReference {
+  cores: CableCores
+  size_mm2: number
+  ampacity_a: number
+  resistance_ohm_km: number
+  reactance_ohm_km: number
+  source: string | null
+}
+
+export interface CableCircuit {
+  id: string
+  si_no: number | null
+  tag: string | null
+  group: string | null
+  voltage_grade: string | null
+  cores: CableCores
+  size_mm2: number
+  cable_type: string | null
+  length_m: number
+  from_description: string | null
+  from_tag: string | null
+  from_location: string | null
+  to_description: string | null
+  to_tag: string | null
+  to_location: string | null
+  building: string | null
+  feeder_load: string | null
+  equipment_kw: number | null
+  load_kw: number
+  voltage_v: number
+  phases: Phases
+  power_factor: number
+  protection_rating_a: number
+  breaker_rating_a: number
+  breaker_type: string | null
+  runs_selected: number
+  grouping_factor: number
+  temperature_factor: number
+  allowable_vd_pct: number | null
+  remark: string | null
+}
+
+export interface CableChecks {
+  ampacity: boolean
+  protection: boolean
+  voltage_drop: boolean | null
+  max_length: boolean | null
+}
+
+export interface CableWarning {
+  code: string
+  message: string
+}
+
+export interface CableDerived {
+  iflc_a: number
+  ampacity_a: number
+  derating: number
+  iz_a: number
+  runs_required: number
+  vd_v: number
+  vd_pct: number
+  vd_last_pct: number | null
+  chain_length_m: number | null
+  max_length_m: number | null
+  voltage_at_end_v: number
+  checks: CableChecks
+  acceptable: boolean
+  warnings: CableWarning[]
+}
+
+export interface CableRow extends CableCircuit {
+  derived: CableDerived
+}
+
+export interface CableStats {
+  circuits: number
+  acceptable: number
+  failed: number
+  groups: number
+  total_length_m: number
+  reference_rows: number
+}
+
+export interface CableState {
+  project: { name: string; document: string; revision: string }
+  reference: CableReference[]
+  circuits: CableRow[]
+  stats: CableStats
+}

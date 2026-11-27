@@ -111,6 +111,22 @@ Releases are automated with semantic-release (`.releaserc.json`,
   cookie, wrong password rejected, logout clears it, replayed cookie rejected, security headers).
 - The browser-side calculation mirror has unit tests: `cd frontend && npm test` (vitest).
 
+## Cable sizing (calculation 02)
+
+`backend/src/cable.rs` mirrors `0000-EF-D-41335_0 Power Cable Sizing Calc.XLSX`:
+
+- IFLC uses `1.732` for three-phase and `1` for single-phase; the voltage drop uses `1.732` / `2`.
+- `IZ = It × Cg × Ca`; `It`, `R` and `X` come from the reference table keyed by `(cores, size_mm2)`.
+  A size that is not in the table yields `IZ = 0`, a `cable_not_in_table` warning and a failed check.
+- Circuits sharing a `group` are a **series chain**: the first circuit reports the cumulative
+  `%VDlast` and the chain length, the others report `None`. A circuit with no group is its own chain.
+- The source workbook's `AK15` (max length of SI 1) references the next row's allowable drop and uses
+  the single-phase factor for a three-phase circuit; the engine uses the circuit's own limit and
+  1.732 (95.7 m instead of 248.5 m). Both pass the 25 m check, so the verdict is unchanged. This is
+  the only intentional deviation and is documented in `tools/extract_cable_seed.py`.
+- `tools/extract_cable_seed.py` regenerates `backend/data/cable_seed.json` and fails if any of the 10
+  circuits no longer matches the workbook; `backend/tests/cable_workbook.rs` asserts the same numbers.
+
 ## PDF report
 
 `backend/src/report.rs` renders the A4 report with `printpdf` and the base-14 fonts (Courier for

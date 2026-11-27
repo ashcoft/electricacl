@@ -13,6 +13,7 @@ use tower_http::trace::TraceLayer;
 
 use electricacl::api::{self, AppState, CapProxy};
 use electricacl::auth::{Auth, CapConfig};
+use electricacl::cable_store::CableStore;
 use electricacl::store::Store;
 
 fn env_or(name: &str, fallback: &str) -> String {
@@ -152,6 +153,14 @@ async fn main() -> Result<()> {
     if let Err(error) = store.persist() {
         tracing::warn!(%error, "state file is not writable, changes will not survive a restart");
     }
+    let cable = CableStore::load(&data_dir)?;
+    if let Err(error) = cable.persist() {
+        tracing::warn!(%error, "cable state file is not writable, changes will not survive a restart");
+    }
+    tracing::info!(
+        circuits = cable.state().circuits.len(),
+        "cable sizing loaded"
+    );
     tracing::info!(
         items = store.items().len(),
         motors = store.motor_table().rows().len(),
@@ -160,6 +169,7 @@ async fn main() -> Result<()> {
 
     let state = Arc::new(AppState {
         store: RwLock::new(store),
+        cable: RwLock::new(cable),
         auth,
         cap_proxy,
     });

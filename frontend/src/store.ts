@@ -2,6 +2,10 @@ import { computed, reactive } from 'vue'
 import { api } from './lib/api'
 import type {
   AppState,
+  CableCircuit,
+  CableReference,
+  CableRow,
+  CableState,
   CalcSettings,
   ItemView,
   LoadItem,
@@ -9,7 +13,7 @@ import type {
   ScenarioSummary,
 } from './types'
 
-export type ViewKey = 'dashboard' | 'loadlist' | 'motors' | 'method'
+export type ViewKey = 'dashboard' | 'loadlist' | 'cable' | 'motors' | 'method'
 
 export interface Toast {
   id: number
@@ -37,7 +41,9 @@ export const ui = reactive({
   loadError: '',
   toasts: [] as Toast[],
   drawerId: null as string | null,
+  cableDrawerId: null as string | null,
   createOpen: false,
+  cableCreateOpen: false,
   settingsOpen: false,
   filters: {
     search: '',
@@ -54,11 +60,17 @@ export const ui = reactive({
 
 export const data = reactive({
   state: null as AppState | null,
+  cable: null as CableState | null,
 })
 
 export const currentSummary = computed<ScenarioSummary | null>(() => {
   if (!data.state) return null
   return data.state.summaries.find((entry) => entry.scenario === ui.scenario) ?? null
+})
+
+export const cableDrawerItem = computed<CableRow | null>(() => {
+  if (!data.cable || !ui.cableDrawerId) return null
+  return data.cable.circuits.find((row) => row.id === ui.cableDrawerId) ?? null
 })
 
 export const drawerItem = computed<ItemView | null>(() => {
@@ -79,12 +91,53 @@ export async function load() {
   ui.loading = true
   ui.loadError = ''
   try {
-    data.state = await api.getState()
+    const [state, cable] = await Promise.all([api.getState(), api.getCableState()])
+    data.state = state
+    data.cable = cable
   } catch (error) {
     ui.loadError = error instanceof Error ? error.message : String(error)
   } finally {
     ui.loading = false
   }
+}
+
+async function mutateCable<T>(action: () => Promise<T>, successMessage?: string) {
+  ui.busy = true
+  try {
+    const result = await action()
+    data.cable = await api.getCableState()
+    if (successMessage) toast('success', successMessage)
+    return result
+  } catch (error) {
+    toast('error', error instanceof Error ? error.message : String(error))
+    return null
+  } finally {
+    ui.busy = false
+  }
+}
+
+export function saveCableCircuit(circuit: CableCircuit) {
+  return mutateCable(() => api.updateCableCircuit(circuit), 'Circuit saved')
+}
+
+export function createCableCircuit(partial: Partial<CableCircuit>) {
+  return mutateCable(() => api.createCableCircuit(partial), 'Circuit added')
+}
+
+export function deleteCableCircuit(id: string) {
+  return mutateCable(() => api.deleteCableCircuit(id), 'Circuit deleted')
+}
+
+export function duplicateCableCircuit(id: string) {
+  return mutateCable(() => api.duplicateCableCircuit(id), 'Circuit duplicated')
+}
+
+export function resetCableCircuits() {
+  return mutateCable(() => api.resetCableCircuits(), 'Source cable data restored')
+}
+
+export function saveCableReference(reference: CableReference[]) {
+  return mutateCable(() => api.saveCableReference(reference), 'Cable reference table saved')
 }
 
 async function mutate<T>(action: () => Promise<T>, successMessage?: string): Promise<T | null> {
@@ -128,10 +181,13 @@ export function resetItems() {
 
 export function resetData() {
   data.state = null
+  data.cable = null
   ui.loading = true
   ui.loadError = ''
   ui.drawerId = null
+  ui.cableDrawerId = null
   ui.createOpen = false
+  ui.cableCreateOpen = false
   ui.settingsOpen = false
   ui.view = 'dashboard'
   ui.scenario = 'normal'

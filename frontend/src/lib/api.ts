@@ -1,4 +1,12 @@
-import type { AppState, AuthStatus, CalcSettings, LoadItem } from '../types'
+import type {
+  AppState,
+  AuthStatus,
+  CableCircuit,
+  CableReference,
+  CableState,
+  CalcSettings,
+  LoadItem,
+} from '../types'
 
 /** Called whenever the API rejects a request because the session is gone. */
 let unauthorizedHandler: (() => void) | null = null
@@ -68,6 +76,37 @@ export const api = {
 
   resetItems: () =>
     request<{ restored: number }>('/api/load-items/reset', { method: 'POST' }),
+
+  getCableState: () => request<CableState>('/api/cable/state'),
+
+  createCableCircuit: (circuit: Partial<CableCircuit>) =>
+    request<CableCircuit>('/api/cable/circuits', {
+      method: 'POST',
+      body: JSON.stringify(circuit),
+    }),
+
+  updateCableCircuit: (circuit: CableCircuit) =>
+    request<CableCircuit>(`/api/cable/circuits/${circuit.id}`, {
+      method: 'PUT',
+      body: JSON.stringify(circuit),
+    }),
+
+  deleteCableCircuit: (id: string) =>
+    request<void>(`/api/cable/circuits/${id}`, { method: 'DELETE' }),
+
+  duplicateCableCircuit: (id: string) =>
+    request<CableCircuit>(`/api/cable/circuits/${id}/duplicate`, { method: 'POST' }),
+
+  resetCableCircuits: () =>
+    request<{ restored: number }>('/api/cable/circuits/reset', { method: 'POST' }),
+
+  saveCableReference: (reference: CableReference[]) =>
+    request<{ reference_rows: number }>('/api/cable/reference', {
+      method: 'PUT',
+      body: JSON.stringify({ reference }),
+    }),
+
+  cableCsvUrl: '/api/export/cable.csv',
 
   exportUrl: '/api/export/csv',
   pdfUrl: '/api/export/pdf',

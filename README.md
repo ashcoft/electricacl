@@ -5,8 +5,9 @@
 [![Version](https://img.shields.io/github/v/release/ashcoft/electricacl)](https://github.com/ashcoft/electricacl/releases)
 [![Container](https://img.shields.io/badge/ghcr.io-electricacl-2496ed?logo=docker&logoColor=white)](https://github.com/ashcoft/electricacl/pkgs/container/electricacl)
 
-A ready-to-run electrical load list calculator: a Rust calculation engine behind a REST API, and a
-Vue 3 + Vite interface built for engineers who have to defend the numbers. Sign-in protected, with an
+A ready-to-run electrical calculation suite: a Rust engine behind a REST API and a Vue 3 + Vite
+interface built for engineers who have to defend the numbers. Two calculations are implemented so
+far — **01 load list** and **02 cable sizing** — both reproducing their source workbooks. Sign-in protected, with an
 optional self-hosted [Cap](https://github.com/tiagozip/cap) CAPTCHA.
 
 The engine reproduces the workbook calculation to the last decimal — continuous, intermittent,
@@ -16,7 +17,7 @@ contingency.
 
 ![Sign in](docs/login.png)
 
-## What it calculates
+## Calculation 01 — load list
 
 For every consumer:
 
@@ -50,6 +51,27 @@ workbook within 1 × 10⁻⁶ kW:
 | Emergency      |          1 929.79 | Recommendation 8.5 |
 
 ![Dashboard](docs/dashboard.png)
+
+## Calculation 02 — cable sizing
+
+Reproduces `0000-EF-D-41335_0 Power Cable Sizing Calc.XLSX` (AS/NZS 3008):
+
+```
+IFLC   = kW × 1000 / (k × V × cos φ)      k = 1.732 (3-phase) or 1 (1-phase)
+IZ     = It × Cg × Ca                     It from the cable reference table
+runs   = IFLC / IZ
+VD     = k × IFLC × (L/1000) / runs × (R cos φ + X sin φ)
+%VD    = VD / V × 100
+%VDlast = sum of %VD along the chain (panel → … → last fixture)
+Lmax   = (allowable % × V / 100) / (k × IFLC / runs × 1/1000 × (R cos φ + X sin φ))
+```
+
+Four checks per circuit: ampacity (IZ ≥ IFLC), protection coordination (IZ > IPR), voltage drop
+(%VDlast ≤ allowable) and maximum length (Lmax ≥ chain length). The 10 circuits of the source
+workbook reproduce to 1 × 10⁻⁶, including the cumulative drop per series chain (1.293 % for the
+lighting chain, 2.107 % for the socket chain).
+
+![Cable sizing](docs/cable-sizing.png)
 
 ## Quick start
 
@@ -151,6 +173,8 @@ The binary also answers `--healthcheck` (used by the image `HEALTHCHECK`) and `-
   numbers on screen, plus warnings for a missing duty, a missing scenario or a motor rating that is
   not in the reference table.
 - **Motor data** — the 80-row efficiency / power factor reference table.
+- **Cable sizing** — 10 circuits with ampacity, protection, voltage-drop and length checks, series
+  chains for cumulative drop, an editable AS/NZS 3008 reference table and CSV export.
 - **Method & basis** — the calculation chain and the workbook verification.
 - **PDF report** — one click from the top bar or the dashboard: A4 report with the key figures, load
   build-up, generator sizing, scenario comparison and the full load list (repeating header, page
@@ -218,6 +242,14 @@ Session required (cookie `eacl_session`):
 | `POST`   | `/api/load-items/reset`          | Restore the embedded source data            |
 | `GET`    | `/api/export/csv`                | CSV export including all derived values     |
 | `GET`    | `/api/export/pdf?scenario=normal` | PDF report: summary, scenarios, load list   |
+| `GET`    | `/api/cable/state`                | Cable circuits + reference table + stats    |
+| `POST`   | `/api/cable/circuits`             | Create a cable circuit                      |
+| `PUT`    | `/api/cable/circuits/{id}`        | Update a cable circuit                      |
+| `DELETE` | `/api/cable/circuits/{id}`        | Delete a cable circuit                      |
+| `POST`   | `/api/cable/circuits/{id}/duplicate` | Duplicate a cable circuit                |
+| `PUT`    | `/api/cable/reference`            | Replace the cable reference table           |
+| `POST`   | `/api/cable/circuits/reset`       | Restore the source cable schedule           |
+| `GET`    | `/api/export/cable.csv`           | Cable schedule with every computed value    |
 
 Example:
 
@@ -234,14 +266,18 @@ curl -s -b /tmp/jar localhost:8080/api/state | jq '.summaries[0].demand'
 ```
 backend/            Rust service (axum)
   src/calc/         load list engine + motor curve
+  src/cable.rs      cable sizing engine (AS/NZS 3008)
+  src/cable_store.rs cable schedule persistence
+  src/report.rs     PDF report
   src/auth.rs       sessions, Argon2 credentials, Cap verification
   src/models.rs     data model (items, duties, scenarios, settings)
   src/store.rs      persistence (JSON on disk, seed embedded in the binary)
   src/api.rs        REST handlers and the auth middleware
   data/seed.json    consumers + motor table extracted from the workbook
+  data/cable_seed.json cable schedule + AS/NZS 3008 reference values
   tests/            workbook verification + HTTP auth tests
 frontend/           Vue 3 + TypeScript + Vite
-tools/              extract_seed.py - regenerate seed.json from LOAD LIST.xlsx
+tools/              extract_seed.py / extract_cable_seed.py - regenerate the seeds from the workbooks
 docker-compose.yml  app, plus Cap + Valkey under the `captcha` profile
 Dockerfile          multi-stage build, unprivileged runtime
 .releaserc.json     semantic-release configuration
@@ -284,8 +320,8 @@ allow the GitHub Actions bot to bypass the rule (or drop that plugin from `.rele
 
 The interface already reserves space for the next calculations in the suite:
 
-1. **Load list** — this release.
-2. Cable sizing (voltage drop, derating, short-circuit withstand).
+1. **Load list** — done.
+2. **Cable sizing** — done (ampacity, derating, voltage drop, protection coordination, max length).
 3. Cathodic protection — ICCP and SACP for piping, pipelines and tanks.
 4. Transformer and generator sizing.
 

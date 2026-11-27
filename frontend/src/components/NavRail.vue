@@ -17,7 +17,6 @@ const views: {
 ]
 
 const upcoming = [
-  { idx: '02', label: 'Cable sizing' },
   { idx: '03', label: 'Cathodic protection' },
   { idx: '04', label: 'Transformer sizing' },
 ]
@@ -39,9 +38,21 @@ const upcoming = [
 
     <div class="nav-group">
       <div class="nav-title">Calculations</div>
-      <button class="nav-item active" @click="ui.view = 'dashboard'">
+      <button
+        class="nav-item"
+        :class="{ active: ui.view === 'dashboard' || ui.view === 'loadlist' }"
+        @click="ui.view = 'dashboard'"
+      >
         <span class="idx">01</span>
         <span>Load list</span>
+      </button>
+      <button
+        class="nav-item"
+        :class="{ active: ui.view === 'cable' }"
+        @click="ui.view = 'cable'"
+      >
+        <span class="idx">02</span>
+        <span>Cable sizing</span>
       </button>
       <button
         v-for="entry in upcoming"

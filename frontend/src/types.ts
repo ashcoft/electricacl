@@ -304,3 +304,132 @@ export interface CableState {
   circuits: CableRow[]
   stats: CableStats
 }
+
+/* ----------------------------------------------------- cathodic protection */
+export type CathodicStructure = 'tank' | 'vessel' | 'piping' | 'pipeline'
+export type CathodicOrientation = 'vertical' | 'horizontal' | 'rectangular'
+export type CathodicSurface = 'internal' | 'external'
+export type CathodicMethod = 'sacp' | 'iccp'
+
+export const CATHODIC_STRUCTURES: { key: CathodicStructure; label: string }[] = [
+  { key: 'tank', label: 'Tank' },
+  { key: 'vessel', label: 'Vessel' },
+  { key: 'piping', label: 'Piping' },
+  { key: 'pipeline', label: 'Pipeline' },
+]
+
+export const CATHODIC_ORIENTATIONS: { key: CathodicOrientation; label: string }[] = [
+  { key: 'vertical', label: 'Vertical' },
+  { key: 'horizontal', label: 'Horizontal' },
+  { key: 'rectangular', label: 'Rectangular' },
+]
+
+export const CATHODIC_SURFACES: { key: CathodicSurface; label: string }[] = [
+  { key: 'internal', label: 'Internal' },
+  { key: 'external', label: 'External' },
+]
+
+export const CATHODIC_METHODS: { key: CathodicMethod; label: string }[] = [
+  { key: 'sacp', label: 'SACP' },
+  { key: 'iccp', label: 'ICCP' },
+]
+
+export interface RectifierInputs {
+  anode_output_a: number
+  groundbed_resistance_ohm: number
+  cable_resistance_ohm: number
+  back_emf_v: number
+  margin_pct: number
+}
+
+export interface CathodicItem {
+  id: string
+  tag: string | null
+  description: string | null
+  source_sheet: string | null
+  structure: CathodicStructure
+  orientation: CathodicOrientation
+  surface: CathodicSurface
+  method: CathodicMethod
+  design_life_years: number
+  coating_breakdown: number
+  apply_coating_breakdown: boolean
+  current_density_a_m2: number
+  temp_coefficient: number
+  design_temp_c: number
+  operating_temp_c: number
+  capacity_temp_c: number | null
+  capacity_ah_kg: number
+  utilization: number
+  safety_factor: number
+  diameter_m: number
+  length_m: number
+  width_m: number
+  height_m: number
+  liquid_height_m: number
+  discrepancy_pct: number
+  current_density_override: number | null
+  anode_type: string | null
+  anode_weight_kg: number
+  anode_output_a: number | null
+  anodes_selected: number
+  rectifier: RectifierInputs | null
+  remark: string | null
+}
+
+export interface CathodicChecks {
+  capacity: boolean
+  current_density: boolean
+  anode_count: boolean
+  design_life: boolean
+}
+
+export interface CathodicWarning {
+  code: string
+  message: string
+}
+
+export interface CathodicDerived {
+  current_density_a_m2: number
+  capacity_at_temp_ah_kg: number
+  area_shell_m2: number
+  area_ends_m2: number
+  wetted_area_m2: number
+  discrepancy_area_m2: number
+  exposed_area_m2: number
+  protection_current_a: number
+  anode_mass_kg: number | null
+  anodes_by_mass: number | null
+  anodes_by_current: number | null
+  anodes_required: number
+  anodes_selected: number
+  life_years: number | null
+  rectifier_current_a: number | null
+  rectifier_voltage_v: number | null
+  rectifier_kva: number | null
+  checks: CathodicChecks
+  acceptable: boolean
+  warnings: CathodicWarning[]
+}
+
+export interface CathodicRow extends CathodicItem {
+  derived: CathodicDerived
+}
+
+export interface CathodicStats {
+  items: number
+  sacp: number
+  iccp: number
+  acceptable: number
+  failed: number
+  warnings: number
+  total_protection_current_a: number
+  total_anode_mass_kg: number
+  total_anodes: number
+}
+
+export interface CathodicState {
+  project: { name: string; document: string; revision: string }
+  items: CathodicRow[]
+  stats: CathodicStats
+}

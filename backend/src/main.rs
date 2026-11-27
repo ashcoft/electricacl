@@ -14,6 +14,7 @@ use tower_http::trace::TraceLayer;
 use electricacl::api::{self, AppState, CapProxy};
 use electricacl::auth::{Auth, CapConfig};
 use electricacl::cable_store::CableStore;
+use electricacl::cathodic_store::CathodicStore;
 use electricacl::store::Store;
 
 fn env_or(name: &str, fallback: &str) -> String {
@@ -161,6 +162,14 @@ async fn main() -> Result<()> {
         circuits = cable.state().circuits.len(),
         "cable sizing loaded"
     );
+    let cathodic = CathodicStore::load(&data_dir)?;
+    if let Err(error) = cathodic.persist() {
+        tracing::warn!(%error, "cathodic state file is not writable, changes will not survive a restart");
+    }
+    tracing::info!(
+        items = cathodic.state().items.len(),
+        "cathodic protection loaded"
+    );
     tracing::info!(
         items = store.items().len(),
         motors = store.motor_table().rows().len(),
@@ -170,6 +179,7 @@ async fn main() -> Result<()> {
     let state = Arc::new(AppState {
         store: RwLock::new(store),
         cable: RwLock::new(cable),
+        cathodic: RwLock::new(cathodic),
         auth,
         cap_proxy,
     });

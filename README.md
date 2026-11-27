@@ -6,9 +6,10 @@
 [![Container](https://img.shields.io/badge/ghcr.io-electricacl-2496ed?logo=docker&logoColor=white)](https://github.com/ashcoft/electricacl/pkgs/container/electricacl)
 
 A ready-to-run electrical calculation suite: a Rust engine behind a REST API and a Vue 3 + Vite
-interface built for engineers who have to defend the numbers. Two calculations are implemented so
-far — **01 load list** and **02 cable sizing** — both reproducing their source workbooks. Sign-in protected, with an
-optional self-hosted [Cap](https://github.com/tiagozip/cap) CAPTCHA.
+interface built for engineers who have to defend the numbers. Three calculations are implemented so
+far — **01 load list**, **02 cable sizing** and **03 cathodic protection** — all reproducing their
+source workbooks. Sign-in protected, with an optional self-hosted
+[Cap](https://github.com/tiagozip/cap) CAPTCHA.
 
 The engine reproduces the workbook calculation to the last decimal — continuous, intermittent,
 stand-by and spare loads per operating scenario, motor efficiency and power factor interpolated from
@@ -72,6 +73,40 @@ workbook reproduce to 1 × 10⁻⁶, including the cumulative drop per series ch
 lighting chain, 2.107 % for the socket chain).
 
 ![Cable sizing](docs/cable-sizing.png)
+
+## Calculation 03 — cathodic protection
+
+Reproduces `Basic Cal SACP for Internal Tank - PT Pertamina MOR VII Sulawesi.xls` for internal tank
+and vessel SACP, and extends the same method to piping, pipelines, external surfaces and ICCP
+(DNV RP B401 2005 / GS EP COR 201):
+
+```
+Cdu  = (Cd + (T − 25) × 0.001) × CBf        DNV temperature correction
+Cap  = ε − 27 × (T − 20)                     Ah/kg at operating temperature
+TWA  = shell area + head / bottom area       from the structure geometry
+SA   = TWA + round(TWA × discrepancy, 2)     the workbook rounds the allowance to 2 dp
+Ip   = SA × Cdu
+M    = Ip × Y × 8760 / Cap / U × S           kg of anode material
+N    = ceil(M / anode unit weight)
+```
+
+Four checks per item: anode capacity is positive, design current density is positive, the selected
+anode count covers the requirement, and the selected anodes reach the design life. ICCP replaces the
+mass balance with a groundbed count and a rectifier rating:
+
+```
+I_rect = Ip
+V_rect = (Ip × (R_groundbed + R_cable) + back EMF) × (1 + margin)
+```
+
+External vertical and rectangular surfaces take an independent wall height; a blank height falls
+back to the length. Internal surfaces use the liquid height.
+
+**Verification.** `backend/tests/cathodic_workbook.rs` asserts 23 sheets of the source workbook to
+1 × 10⁻⁶: wetted and exposed area, current density, anode capacity, protection current, anode mass
+and anode count. Four sheets are documented one-offs and are not forced into the model — a
+dimensionally inconsistent partial-shell area, a current density that mixes the coating factor into
+the temperature term, and a 50 % wetted-area allowance.
 
 ## Quick start
 
@@ -268,6 +303,8 @@ backend/            Rust service (axum)
   src/calc/         load list engine + motor curve
   src/cable.rs      cable sizing engine (AS/NZS 3008)
   src/cable_store.rs cable schedule persistence
+  src/cathodic.rs   cathodic protection engine (DNV RP B401 / GS EP COR)
+  src/cathodic_store.rs cathodic schedule persistence
   src/report.rs     PDF report
   src/auth.rs       sessions, Argon2 credentials, Cap verification
   src/models.rs     data model (items, duties, scenarios, settings)
@@ -275,9 +312,10 @@ backend/            Rust service (axum)
   src/api.rs        REST handlers and the auth middleware
   data/seed.json    consumers + motor table extracted from the workbook
   data/cable_seed.json cable schedule + AS/NZS 3008 reference values
+  data/cathodic_seed.json cathodic items extracted from the SACP workbook
   tests/            workbook verification + HTTP auth tests
 frontend/           Vue 3 + TypeScript + Vite
-tools/              extract_seed.py / extract_cable_seed.py - regenerate the seeds from the workbooks
+tools/              extract_seed.py / extract_cable_seed.py / extract_cathodic_seed.py - regenerate the seeds
 docker-compose.yml  app, plus Cap + Valkey under the `captcha` profile
 Dockerfile          multi-stage build, unprivileged runtime
 .releaserc.json     semantic-release configuration
@@ -322,7 +360,8 @@ The interface already reserves space for the next calculations in the suite:
 
 1. **Load list** — done.
 2. **Cable sizing** — done (ampacity, derating, voltage drop, protection coordination, max length).
-3. Cathodic protection — ICCP and SACP for piping, pipelines and tanks.
+3. **Cathodic protection** — done for SACP (tank, vessel, piping, pipeline, internal/external) and
+   ICCP current demand and rectifier sizing.
 4. Transformer and generator sizing.
 
 ## License
